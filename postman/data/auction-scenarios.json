@@ -1,0 +1,17 @@
+[
+  {
+    "name": "Both campaigns bid - A wins",
+    "placement_id": "pm-auction",
+    "floor": 1.00,
+    "expected_status": 200,
+    "expected_winner": "camp_a",
+    "expected_price": 2.01
+  },
+  {
+    "name": "Floor above all bids",
+    "placement_id": "pm-auction",
+    "floor": 5.00,
+    "expected_status": 204,
+    "expected_reason": "below_floor"
+  }
+]

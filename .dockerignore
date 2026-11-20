@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+.tools
+.cache
+bin
+docs/test-reports
+*.exe
+*.out

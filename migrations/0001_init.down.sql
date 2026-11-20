@@ -1,0 +1,9 @@
+DROP TABLE processed_events;
+DROP TABLE hourly_stats;
+DROP TABLE targeting_rules;
+DROP TABLE creatives;
+DROP TABLE campaigns;
+DROP TABLE bidders;
+DROP TABLE advertisers;
+DROP FUNCTION bump_catalog_version();
+DROP TABLE catalog_version;

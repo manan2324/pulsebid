@@ -1,0 +1,277 @@
+openapi: 3.0.3
+info:
+  title: PulseBid Reporting API
+  description: Analytics and reporting queries for campaign performance rollups (Section 11.3).
+  version: 1.0.0
+servers:
+  - url: http://localhost:8083
+    description: Local event-aggregator reporting server
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /v1/reports/campaigns:
+    get:
+      summary: Retrieve aggregated campaign reports across a time window
+      operationId: getCampaignReports
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inclusive start of reporting interval (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-11-18T00:00:00Z"
+        - name: to
+          in: query
+          required: true
+          description: Exclusive end of reporting interval (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-11-19T00:00:00Z"
+        - name: granularity
+          in: query
+          required: false
+          description: Temporal aggregation bucket
+          schema:
+            type: string
+            enum: [hour, day, total]
+            default: total
+        - name: campaign_id
+          in: query
+          required: false
+          description: Filter by campaign ID (repeatable, maximum 100)
+          schema:
+            type: array
+            items:
+              type: string
+              format: uuid
+      responses:
+        "200":
+          description: Performance metrics report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportResponse"
+        "400":
+          description: Invalid request parameters or range constraint violated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/reports/campaigns/{id}:
+    get:
+      summary: Retrieve performance report for a single campaign
+      operationId: getSingleCampaignReport
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Campaign UUID
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          required: true
+          description: Inclusive start of reporting interval (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-11-18T00:00:00Z"
+        - name: to
+          in: query
+          required: true
+          description: Exclusive end of reporting interval (RFC 3339)
+          schema:
+            type: string
+            format: date-time
+            example: "2026-11-19T00:00:00Z"
+        - name: granularity
+          in: query
+          required: false
+          description: Temporal aggregation bucket
+          schema:
+            type: string
+            enum: [hour, day, total]
+            default: total
+      responses:
+        "200":
+          description: Performance metrics report for the single campaign (returns empty data and 0 totals if not found)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportResponse"
+        "400":
+          description: Invalid request parameters or bad UUID in path
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    ReportResponse:
+      type: object
+      required:
+        - from
+        - to
+        - granularity
+        - data
+        - totals
+      properties:
+        from:
+          type: string
+          format: date-time
+          example: "2026-11-18T00:00:00Z"
+        to:
+          type: string
+          format: date-time
+          example: "2026-11-19T00:00:00Z"
+        granularity:
+          type: string
+          enum: [hour, day, total]
+          example: "hour"
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportRow"
+        totals:
+          $ref: "#/components/schemas/Totals"
+
+    ReportRow:
+      type: object
+      required:
+        - campaign_id
+        - impressions
+        - clicks
+        - ctr
+        - spend
+        - currency
+        - bids
+        - wins
+        - win_rate
+      properties:
+        campaign_id:
+          type: string
+          format: uuid
+        bucket:
+          type: string
+          format: date-time
+          description: Omitted when granularity is total
+          example: "2026-11-18T10:00:00Z"
+        impressions:
+          type: integer
+          format: int64
+          example: 1200
+        clicks:
+          type: integer
+          format: int64
+          example: 36
+        ctr:
+          type: number
+          format: double
+          example: 0.03
+        spend:
+          type: number
+          format: double
+          description: Total spend in dollars (spend_micros / 1,000,000)
+          example: 1.812
+        currency:
+          type: string
+          example: "USD"
+        bids:
+          type: integer
+          format: int64
+          example: 5000
+        wins:
+          type: integer
+          format: int64
+          example: 1210
+        win_rate:
+          type: number
+          format: double
+          example: 0.242
+
+    Totals:
+      type: object
+      required:
+        - impressions
+        - clicks
+        - ctr
+        - spend
+        - bids
+        - wins
+        - win_rate
+      properties:
+        impressions:
+          type: integer
+          format: int64
+          example: 1200
+        clicks:
+          type: integer
+          format: int64
+          example: 36
+        ctr:
+          type: number
+          format: double
+          example: 0.03
+        spend:
+          type: number
+          format: double
+          example: 1.812
+        bids:
+          type: integer
+          format: int64
+          example: 5000
+        wins:
+          type: integer
+          format: int64
+          example: 1210
+        win_rate:
+          type: number
+          format: double
+          example: 0.242
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - request_id
+          properties:
+            code:
+              type: string
+              example: "invalid_request"
+            message:
+              type: string
+              example: "from parameter is required"
+            request_id:
+              type: string
+              example: "0193f0a2-ca00-7000-8000-000000000001"

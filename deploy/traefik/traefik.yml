@@ -1,0 +1,12 @@
+entryPoints:
+  web:
+    address: ":8088"
+  ping:
+    address: ":8082"
+ping:
+  entryPoint: ping
+providers:
+  docker:
+    exposedByDefault: false
+    network: pulsebid_default
+# Gateway labels and replica routing are added with the apps in later phases.

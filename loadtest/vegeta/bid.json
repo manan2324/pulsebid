@@ -1,0 +1,17 @@
+{
+  "id": "vegeta-target-001",
+  "imp": {
+    "id": "1",
+    "placement_id": "slot-0",
+    "w": 300,
+    "h": 250,
+    "bidfloor": 0.50
+  },
+  "device": {
+    "type": "mobile"
+  },
+  "geo": {
+    "country": "IN"
+  },
+  "tmax": 100
+}

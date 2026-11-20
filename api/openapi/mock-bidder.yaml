@@ -1,0 +1,291 @@
+openapi: 3.0.3
+info:
+  title: PulseBid Mock Bidder API
+  version: 0.4.0
+  description: >-
+    Simulated DSP bidder service for the PulseBid real-time bidding exchange.
+    Each bidder instance listens on an independent TCP port (e.g. 9101-9108) and
+    implements the real-time bid protocol, health endpoints, and runtime behavioral knobs.
+servers:
+  - url: http://localhost:9101
+    description: Mock Bidder 1 (default base port)
+  - url: http://localhost:9102
+    description: Mock Bidder 2
+paths:
+  /bid:
+    post:
+      operationId: submitBid
+      summary: Evaluate candidates and return bids
+      description: Evaluates candidate campaigns nominated by the gateway and returns pricing bids according to the configured bid mode and behavioral knobs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidRequest'
+      responses:
+        '200':
+          description: One or more valid bids returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidResponse'
+        '204':
+          description: No bid submitted (candidates below floor, no-bid rate triggered, or empty candidates).
+        '400':
+          description: Malformed JSON request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Simulated DSP internal error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Simulated DSP timeout exceeded.
+
+  /healthz:
+    get:
+      operationId: checkHealth
+      summary: Liveness probe
+      description: Returns 200 OK while the bidder process is running.
+      responses:
+        '200':
+          description: Process is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /readyz:
+    get:
+      operationId: checkReadiness
+      summary: Readiness probe
+      description: Returns 200 OK when ready to receive traffic, or 503 during graceful draining.
+      responses:
+        '200':
+          description: Bidder is ready.
+        '503':
+          description: Bidder is draining or shutting down.
+
+  /admin/config:
+    get:
+      operationId: getConfig
+      summary: Read runtime configuration
+      description: Retrieves the active simulation knobs and parameters for this bidder.
+      responses:
+        '200':
+          description: Current bidder configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidderConfig'
+    post:
+      operationId: updateConfig
+      summary: Partial update of runtime configuration
+      description: Partially updates simulation knobs (e.g. latency, error rate, bid mode) at runtime.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidderConfigPatch'
+      responses:
+        '200':
+          description: Updated bidder configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidderConfig'
+        '400':
+          description: Invalid configuration parameter.
+
+components:
+  schemas:
+    BidRequest:
+      type: object
+      required:
+        - request_id
+      properties:
+        request_id:
+          type: string
+          example: req-123
+        tmax_ms:
+          type: integer
+          example: 100
+        imp:
+          type: object
+          properties:
+            id:
+              type: string
+              example: "1"
+            placement_id:
+              type: string
+              example: home-top-banner
+            w:
+              type: integer
+              example: 300
+            h:
+              type: integer
+              example: 250
+            bidfloor:
+              type: number
+              format: double
+              example: 0.50
+        device:
+          type: object
+          properties:
+            type:
+              type: string
+              example: mobile
+            os:
+              type: string
+              example: android
+        geo:
+          type: object
+          properties:
+            country:
+              type: string
+              example: IN
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candidate'
+
+    Candidate:
+      type: object
+      required:
+        - campaign_id
+        - creative_id
+        - max_bid_cpm
+      properties:
+        campaign_id:
+          type: string
+          format: uuid
+        creative_id:
+          type: string
+          format: uuid
+        max_bid_cpm:
+          type: number
+          format: double
+          example: 3.00
+
+    BidResponse:
+      type: object
+      required:
+        - bids
+      properties:
+        bids:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bid'
+
+    Bid:
+      type: object
+      required:
+        - campaign_id
+        - creative_id
+        - price
+      properties:
+        campaign_id:
+          type: string
+          format: uuid
+        creative_id:
+          type: string
+          format: uuid
+        price:
+          type: number
+          format: double
+          example: 2.40
+
+    BidderConfig:
+      type: object
+      required:
+        - latency_ms
+        - jitter_ms
+        - error_rate
+        - timeout_rate
+        - no_bid_rate
+        - bid_mode
+        - bid_shade
+        - seed
+      properties:
+        latency_ms:
+          type: integer
+          example: 10
+        jitter_ms:
+          type: integer
+          example: 15
+        error_rate:
+          type: number
+          format: double
+          example: 0.0
+        timeout_rate:
+          type: number
+          format: double
+          example: 0.0
+        no_bid_rate:
+          type: number
+          format: double
+          example: 0.05
+        bid_mode:
+          type: string
+          enum: [fixed, shade, random]
+          example: fixed
+        bid_shade:
+          type: number
+          format: double
+          example: 0.9
+        seed:
+          type: integer
+          format: int64
+          example: 1
+
+    BidderConfigPatch:
+      type: object
+      properties:
+        latency_ms:
+          type: integer
+        jitter_ms:
+          type: integer
+        error_rate:
+          type: number
+          format: double
+        timeout_rate:
+          type: number
+          format: double
+        no_bid_rate:
+          type: number
+          format: double
+        bid_mode:
+          type: string
+          enum: [fixed, shade, random]
+        bid_shade:
+          type: number
+          format: double
+        seed:
+          type: integer
+          format: int64
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+            message:
+              type: string

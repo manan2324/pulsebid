@@ -1,0 +1,59 @@
+syntax = "proto3";
+package pulsebid.catalog.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "pulsebid/gen/pulsebid/catalog/v1;catalogv1";
+
+service CatalogService {
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+}
+message GetSnapshotRequest {
+  int64 known_version = 1;
+}
+message GetSnapshotResponse {
+  int64 version = 1;
+  bool unchanged = 2; // true => other fields empty
+  repeated Bidder bidders = 3;
+  repeated Campaign campaigns = 4;
+  google.protobuf.Timestamp generated_at = 5;
+}
+message Bidder {
+  string id = 1;
+  string endpoint_url = 2;
+  int32 timeout_ms = 3;
+  /* 0 = default */
+}
+message Creative {
+  string id = 1;
+  string format = 2;
+  int32 width = 3;
+  int32 height = 4;
+  string markup = 5;
+  string landing_url = 6;
+}
+message Targeting {
+  repeated string countries = 1;
+  repeated string device_types = 2;
+  repeated string placement_ids = 3;
+  repeated int32 hours_of_day = 4;
+  string timezone = 5;
+}
+enum PacingMode {
+  PACING_MODE_UNSPECIFIED = 0;
+  PACING_MODE_ASAP = 1;
+  PACING_MODE_EVEN = 2;
+}
+message Campaign {
+  string id = 1;
+  string advertiser_id = 2;
+  string bidder_id = 3;
+  string name = 4;
+  int64 daily_budget_micros = 5;
+  int64 max_bid_cpm_micros = 6;
+  PacingMode pacing_mode = 7;
+  google.protobuf.Timestamp start_at = 8;
+  google.protobuf.Timestamp end_at = 9;
+  Targeting targeting = 10;
+  repeated Creative creatives = 11;
+}

@@ -1,0 +1,55 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Lint, race tests, and build
+        run: make lint test build
+      - name: Campaign PostgreSQL integration tests
+        run: make test-int
+      - name: Validate Compose
+        run: docker compose -f deploy/docker-compose.yml --profile scale config --quiet
+      - name: Start infrastructure and create topics
+        run: make up topics
+      - name: Verify topic creation is repeatable
+        run: make topics
+      - name: Migrate local database
+        run: make migrate-up
+      - name: Platform admin and SIGTERM checks
+        run: make test-platform
+      - name: Campaign Postman folders 00-02
+        run: make test-api
+      - name: Catalog grpcurl and health checks
+        run: make test-grpc
+      - name: Upload API reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase-3-api-reports
+          path: docs/test-reports/
+      - name: Probe observability endpoints
+        run: |
+          bash scripts/wait-for.sh http://localhost:3000/api/health 30
+          bash scripts/wait-for.sh http://localhost:16686/ 30
+          bash scripts/wait-for.sh http://localhost:9090/-/ready 30
+      - name: Infrastructure diagnostics
+        if: failure()
+        run: |
+          docker compose -f deploy/docker-compose.yml ps -a
+          docker compose -f deploy/docker-compose.yml logs --no-color --tail=100
+      - name: Stop infrastructure
+        if: always()
+        run: make down

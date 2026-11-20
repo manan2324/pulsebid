@@ -1,0 +1,4916 @@
+{
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "if (!pm.collectionVariables.get(\"run_id\")) pm.collectionVariables.set(\"run_id\", pm.variables.replaceIn(\"{{$guid}}\").replace(/-/g, \"\").slice(0, 12));",
+          "const resolved = pm.variables.replaceIn(pm.request.url.toString());",
+          "if (resolved.startsWith(pm.environment.get(\"campaign_url\")) || resolved.startsWith(pm.environment.get(\"reporting_url\"))) pm.request.headers.upsert({key:\"X-API-Key\",value:pm.environment.get(\"api_key\")});",
+          "pm.request.headers.upsert({key:\"X-Request-Id\",value:pm.variables.replaceIn(\"{{$guid}}\")});"
+        ],
+        "type": "text/javascript"
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "pm.test(\"request ID present\", () => pm.expect(pm.response.headers.get(\"X-Request-Id\")).to.be.a(\"string\").and.not.empty);",
+          "if (pm.response.code >= 400) pm.test(\"error envelope\", () => { const e=pm.response.json().error; pm.expect(e).to.have.keys([\"code\",\"message\",\"request_id\"].concat(e.details ? [\"details\"] : [])); pm.expect(e.request_id).to.eql(pm.response.headers.get(\"X-Request-Id\")); });"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "info": {
+    "description": "Incremental Phase 4 collection. Run folders 00, 01, 02, and 10 in order. Each run creates uniquely named fixtures. Includes bidder health probes and resilience tuning skeleton.",
+    "name": "PulseBid",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set(\"run_id\", pm.variables.replaceIn(\"{{$guid}}\").replace(/-/g, \"\").slice(0, 12));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Gateway healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{gateway_admin_url}}/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Gateway readyz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{gateway_admin_url}}/readyz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"HTTP metrics\", () => pm.expect(pm.response.text()).to.include(\"http_server_requests_total\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Gateway metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{gateway_admin_url}}/metrics"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Campaign healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_admin_url}}/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Campaign readyz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_admin_url}}/readyz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"HTTP metrics\", () => pm.expect(pm.response.text()).to.include(\"http_server_requests_total\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Campaign metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_admin_url}}/metrics"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Aggregator healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{aggregator_admin_url}}/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Aggregator readyz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{aggregator_admin_url}}/readyz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"HTTP metrics\", () => pm.expect(pm.response.text()).to.include(\"http_server_requests_total\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Aggregator metrics",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{aggregator_admin_url}}/metrics"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Bidder healthy\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 1 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9101/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 2 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9102/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 3 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9103/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 4 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9104/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 5 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9105/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 6 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9106/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 7 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9107/healthz"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bidder 8 healthz",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "http://{{bidder_host}}:9108/healthz"
+          }
+        }
+      ],
+      "name": "00 Health"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"advertiser_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create advertiser",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Postman {{run_id}}\",\n  \"contact_email\": \"ads@acme.test\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/advertisers"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Get advertiser",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/advertisers/{{advertiser_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"page envelope\", () => { const p=pm.response.json(); pm.expect(p.data).to.be.an(\"array\"); pm.expect(p).to.have.property(\"next_cursor\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "List advertisers",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/advertisers?limit=2"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"contact_email\", () => pm.expect(pm.response.json().contact_email).to.eql(null));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Clear nullable advertiser email",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"contact_email\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/advertisers/{{advertiser_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"bidder1_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Register bidder 1",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"pm-{{run_id}}-1\",\n  \"name\": \"Mock DSP 1\",\n  \"endpoint_url\": \"http://{{bidder_host}}:9101/bid\",\n  \"timeout_ms\": null,\n  \"enabled\": true\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/bidders"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"bidder2_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Register bidder 2",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"pm-{{run_id}}-2\",\n  \"name\": \"Mock DSP 2\",\n  \"endpoint_url\": \"http://{{bidder_host}}:9102/bid\",\n  \"timeout_ms\": null,\n  \"enabled\": true\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/bidders"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"bidder3_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Register bidder 3",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"pm-{{run_id}}-3\",\n  \"name\": \"Mock DSP 3\",\n  \"endpoint_url\": \"http://{{bidder_host}}:9103/bid\",\n  \"timeout_ms\": null,\n  \"enabled\": true\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/bidders"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Get bidder",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/bidders/{{bidder1_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "List bidders",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/bidders?limit=1"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"timeout_ms\", () => pm.expect(pm.response.json().timeout_ms).to.eql(50));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Update bidder timeout",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"timeout_ms\": 50\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/bidders/{{bidder1_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"timeout_ms\", () => pm.expect(pm.response.json().timeout_ms).to.eql(null));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Restore default bidder timeout",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"timeout_ms\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/bidders/{{bidder1_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_a_id\", pm.response.json().id);",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"draft\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create campaign A",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"Campaign A {{run_id}}\",\n  \"daily_budget\": 1000,\n  \"max_bid_cpm\": 3,\n  \"pacing_mode\": \"asap\",\n  \"start_at\": null,\n  \"end_at\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Target campaign A",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"countries\": [\n    \"IN\"\n  ],\n  \"device_types\": [\n    \"mobile\"\n  ],\n  \"placement_ids\": [\n    \"pm-auction\"\n  ],\n  \"hours_of_day\": [],\n  \"timezone\": \"UTC\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_a_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Creative for campaign A",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Banner\",\n  \"format\": \"banner\",\n  \"width\": 300,\n  \"height\": 250,\n  \"markup\": \"<a href=\\\"{click_url}\\\">Ad</a><img src=\\\"{impression_url}\\\" width=\\\"1\\\" height=\\\"1\\\">\",\n  \"landing_url\": \"https://acme.test/diwali\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/creatives"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"active\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Activate campaign A",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_b_id\", pm.response.json().id);",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"draft\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create campaign B",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder2_id}}\",\n  \"name\": \"Campaign B {{run_id}}\",\n  \"daily_budget\": 1000,\n  \"max_bid_cpm\": 2,\n  \"pacing_mode\": \"asap\",\n  \"start_at\": null,\n  \"end_at\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Target campaign B",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"countries\": [\n    \"IN\"\n  ],\n  \"device_types\": [\n    \"mobile\"\n  ],\n  \"placement_ids\": [\n    \"pm-auction\"\n  ],\n  \"hours_of_day\": [],\n  \"timezone\": \"UTC\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_b_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_b_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Creative for campaign B",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Banner\",\n  \"format\": \"banner\",\n  \"width\": 300,\n  \"height\": 250,\n  \"markup\": \"<a href=\\\"{click_url}\\\">Ad</a><img src=\\\"{impression_url}\\\" width=\\\"1\\\" height=\\\"1\\\">\",\n  \"landing_url\": \"https://acme.test/diwali\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_b_id}}/creatives"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"active\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Activate campaign B",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_b_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_budget_id\", pm.response.json().id);",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"draft\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create campaign BUDGET",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder3_id}}\",\n  \"name\": \"Campaign BUDGET {{run_id}}\",\n  \"daily_budget\": 0.01,\n  \"max_bid_cpm\": 3,\n  \"pacing_mode\": \"asap\",\n  \"start_at\": null,\n  \"end_at\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Target campaign BUDGET",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"countries\": [\n    \"IN\"\n  ],\n  \"device_types\": [\n    \"mobile\"\n  ],\n  \"placement_ids\": [\n    \"pm-budget\"\n  ],\n  \"hours_of_day\": [],\n  \"timezone\": \"UTC\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_budget_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_budget_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Creative for campaign BUDGET",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Banner\",\n  \"format\": \"banner\",\n  \"width\": 300,\n  \"height\": 250,\n  \"markup\": \"<a href=\\\"{click_url}\\\">Ad</a><img src=\\\"{impression_url}\\\" width=\\\"1\\\" height=\\\"1\\\">\",\n  \"landing_url\": \"https://acme.test/diwali\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_budget_id}}/creatives"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"active\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Activate campaign BUDGET",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_budget_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_geo_id\", pm.response.json().id);",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"draft\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create campaign GEO",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"Campaign GEO {{run_id}}\",\n  \"daily_budget\": 1000,\n  \"max_bid_cpm\": 3,\n  \"pacing_mode\": \"asap\",\n  \"start_at\": null,\n  \"end_at\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Target campaign GEO",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"countries\": [\n    \"US\"\n  ],\n  \"device_types\": [\n    \"mobile\"\n  ],\n  \"placement_ids\": [\n    \"pm-geo\"\n  ],\n  \"hours_of_day\": [],\n  \"timezone\": \"UTC\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_geo_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_geo_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Creative for campaign GEO",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Banner\",\n  \"format\": \"banner\",\n  \"width\": 300,\n  \"height\": 250,\n  \"markup\": \"<a href=\\\"{click_url}\\\">Ad</a><img src=\\\"{impression_url}\\\" width=\\\"1\\\" height=\\\"1\\\">\",\n  \"landing_url\": \"https://acme.test/diwali\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_geo_id}}/creatives"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"active\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Activate campaign GEO",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_geo_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_hours_id\", pm.response.json().id);",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"draft\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create campaign HOURS",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"Campaign HOURS {{run_id}}\",\n  \"daily_budget\": 1000,\n  \"max_bid_cpm\": 3,\n  \"pacing_mode\": \"asap\",\n  \"start_at\": null,\n  \"end_at\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Target campaign HOURS",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"countries\": [\n    \"IN\"\n  ],\n  \"device_types\": [\n    \"mobile\"\n  ],\n  \"placement_ids\": [\n    \"pm-hours\"\n  ],\n  \"hours_of_day\": [\n    3\n  ],\n  \"timezone\": \"UTC\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_hours_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"camp_hours_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Creative for campaign HOURS",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Banner\",\n  \"format\": \"banner\",\n  \"width\": 300,\n  \"height\": 250,\n  \"markup\": \"<a href=\\\"{click_url}\\\">Ad</a><img src=\\\"{impression_url}\\\" width=\\\"1\\\" height=\\\"1\\\">\",\n  \"landing_url\": \"https://acme.test/diwali\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_hours_id}}/creatives"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"active\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Activate campaign HOURS",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_hours_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Get campaign",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"campaign_cursor\", pm.response.json().next_cursor);",
+                  "pm.test(\"two results and cursor\", () => { pm.expect(pm.response.json().data).to.have.lengthOf(2); pm.expect(pm.response.json().next_cursor).to.be.a(\"string\"); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "List filtered campaigns first page",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns?advertiser_id={{advertiser_id}}&status=active&limit=2"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "List filtered campaigns next page",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns?advertiser_id={{advertiser_id}}&status=active&limit=2&cursor={{campaign_cursor}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const s=pm.response.json();",
+                  "pm.test(\"all five campaigns included\", () => { const ids=s.campaigns.map(c => c.id); [\"camp_a_id\",\"camp_b_id\",\"camp_budget_id\",\"camp_geo_id\",\"camp_hours_id\"].forEach(k => pm.expect(ids).to.include(pm.collectionVariables.get(k))); });",
+                  "pm.test(\"protobuf JSON and exact money\", () => { pm.expect(s.version).to.match(/^[0-9]+$/); pm.expect(s.unchanged).to.eql(false); pm.expect(s.generated_at).to.be.a(\"string\"); const c=s.campaigns.find(c => c.id===pm.collectionVariables.get(\"camp_a_id\")); pm.expect(c.daily_budget_micros).to.be.a(\"string\"); pm.expect(c.max_bid_cpm_micros).to.eql(\"3000000\"); pm.expect(c.pacing_mode).to.eql(\"PACING_MODE_ASAP\"); });",
+                  "pm.collectionVariables.set(\"snapshot_etag\",pm.response.headers.get(\"ETag\")); pm.collectionVariables.set(\"snapshot_version\",s.version);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Snapshot reflects active campaigns",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 304\", () => pm.response.to.have.status(304));",
+                  "pm.test(\"empty 304 response\", () => pm.expect(pm.response.text()).to.eql(\"\"));",
+                  "pm.test(\"same ETag\", () => pm.expect(pm.response.headers.get(\"ETag\")).to.eql(pm.collectionVariables.get(\"snapshot_etag\")));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Snapshot unchanged ETag",
+          "request": {
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "{{snapshot_etag}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"paused\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Pause campaign A",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/pause"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const s=pm.response.json();",
+                  "pm.test(\"paused A excluded, B retained\", () => { const ids=s.campaigns.map(c=>c.id); pm.expect(ids).not.to.include(pm.collectionVariables.get(\"camp_a_id\")); pm.expect(ids).to.include(pm.collectionVariables.get(\"camp_b_id\")); });",
+                  "pm.test(\"mutation changes version and ETag\", () => { pm.expect(s.version).not.to.eql(pm.collectionVariables.get(\"snapshot_version\")); pm.expect(pm.response.headers.get(\"ETag\")).not.to.eql(pm.collectionVariables.get(\"snapshot_etag\")); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Snapshot reflects paused campaign",
+          "request": {
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "{{snapshot_etag}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"active\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Resume campaign A",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"A restored\", () => pm.expect(pm.response.json().campaigns.map(c=>c.id)).to.include(pm.collectionVariables.get(\"camp_a_id\")));",
+                  "pm.collectionVariables.set(\"snapshot_latest_etag\",pm.response.headers.get(\"ETag\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Snapshot reflects reactivated campaign",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 304\", () => pm.response.to.have.status(304));",
+                  "pm.test(\"no body\", () => pm.expect(pm.response.text()).to.eql(\"\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Snapshot weak ETag matches",
+          "request": {
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "W/{{snapshot_latest_etag}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"daily_budget\", () => pm.expect(pm.response.json().daily_budget).to.eql(1000.123456));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Patch campaign exact money",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\"daily_budget\":1000.123456}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Get targeting",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Get creative",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/creatives/{{camp_a_creative_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "List creatives",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/creatives?limit=50"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"name\", () => pm.expect(pm.response.json().name).to.eql(\"Updated Banner\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Update creative name",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Updated Banner\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/creatives/{{camp_a_creative_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"temporary_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create removable creative",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Temporary\",\n  \"format\": \"native\",\n  \"markup\": \"Ad\",\n  \"landing_url\": \"https://acme.test\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/creatives"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Delete temporary creative",
+          "request": {
+            "header": [],
+            "method": "DELETE",
+            "url": "{{campaign_url}}/v1/creatives/{{temporary_creative_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"unused_bidder_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create unused bidder",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"pm-{{run_id}}-unused\",\n  \"name\": \"Unused\",\n  \"endpoint_url\": \"http://localhost:9199/bid\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/bidders"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Delete unused bidder",
+          "request": {
+            "header": [],
+            "method": "DELETE",
+            "url": "{{campaign_url}}/v1/bidders/{{unused_bidder_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"archive_advertiser_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create advertiser to archive",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Archive {{run_id}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/advertisers"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Archive advertiser",
+          "request": {
+            "header": [],
+            "method": "DELETE",
+            "url": "{{campaign_url}}/v1/advertisers/{{archive_advertiser_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status\", () => pm.expect(pm.response.json().status).to.eql(\"archived\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Verify archived advertiser",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/advertisers/{{archive_advertiser_id}}"
+          }
+        }
+      ],
+      "name": "01 Setup (Campaign service)"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.remove(\"X-API-Key\");"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "No API key",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/advertisers"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Invalid UUID",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns/not-a-uuid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Unknown advertiser",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/advertisers/00000000-0000-4000-8000-000000000000"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Duplicate advertiser name",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Postman {{run_id}}\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/advertisers"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Negative budget",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"Negative\",\n  \"daily_budget\": -1,\n  \"max_bid_cpm\": 3\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Seven decimal places",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"Negative\",\n  \"daily_budget\": 50,\n  \"max_bid_cpm\": \"1.1234567\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Invalid timezone",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"timezone\": \"Invalid/Zone\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}/targeting"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"no_creative_id\", pm.response.json().id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Create draft without creative",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"{{advertiser_id}}\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"No creative {{run_id}}\",\n  \"daily_budget\": 50,\n  \"max_bid_cpm\": 3\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Activation without creative",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{no_creative_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "PATCH cannot bypass activation rule",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"status\": \"active\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{no_creative_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Cannot delete referenced bidder",
+          "request": {
+            "header": [],
+            "method": "DELETE",
+            "url": "{{campaign_url}}/v1/bidders/{{bidder1_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Unknown PATCH field",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"budegt\": 10\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Null required name",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": null\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Foreign-key conflict",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"advertiser_id\": \"00000000-0000-4000-8000-000000000000\",\n  \"bidder_id\": \"{{bidder1_id}}\",\n  \"name\": \"Negative\",\n  \"daily_budget\": 50,\n  \"max_bid_cpm\": 3\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Invalid date window",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"start_at\": \"2026-01-02T00:00:00Z\",\n  \"end_at\": \"2026-01-01T00:00:00Z\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Invalid bidder URL",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"endpoint_url\": \"file:///tmp/bid\"\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/bidders/{{bidder1_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Invalid limit",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns?limit=201"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Invalid cursor",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/campaigns?cursor=invalid!"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Archive draft",
+          "request": {
+            "header": [],
+            "method": "DELETE",
+            "url": "{{campaign_url}}/v1/campaigns/{{no_creative_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Archived is terminal",
+          "request": {
+            "header": [],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{no_creative_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Deleted creative is not found",
+          "request": {
+            "header": [],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/creatives/{{temporary_creative_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.remove(\"X-API-Key\");"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Snapshot requires API key",
+          "request": {
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "{{snapshot_latest_etag}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        }
+      ],
+      "name": "02 Validation and Auth negatives"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 filled\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Bid response fields\", () => {",
+                  "  pm.expect(b.request_id).to.eql(\"req-happy-\" + pm.collectionVariables.get(\"run_id\"));",
+                  "  pm.expect(b.bid_id).to.match(/^[0-9a-f-]{36}$/i);",
+                  "  pm.expect(b.price).to.be.at.least(0.50);",
+                  "  pm.expect(b.currency).to.eql(\"USD\");",
+                  "  pm.expect(b.impression_url).to.be.a(\"string\");",
+                  "  pm.expect(b.click_url).to.be.a(\"string\");",
+                  "  pm.expect(b.w).to.eql(300);",
+                  "  pm.expect(b.h).to.eql(250);",
+                  "  pm.expect(b.adm).to.not.include(\"{click_url}\");",
+                  "  pm.expect(b.adm).to.not.include(\"{impression_url}\");",
+                  "});",
+                  "pm.test(\"Latency under budget\", () => {",
+                  "  const budget = Number(pm.environment.get(\"latency_budget_ms\") || 120);",
+                  "  pm.expect(pm.response.responseTime).to.be.below(budget);",
+                  "});",
+                  "pm.test(\"Server-Timing header present\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"Server-Timing\")).to.include(\"total;dur=\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bid happy path",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"req-happy-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"imp-1\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bid negative missing id",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imp\": {\n    \"id\": \"imp-1\",\n    \"placement_id\": \"pm-auction\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bid negative bad device type",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-bad-dev\",\n  \"imp\": {\n    \"id\": \"i1\",\n    \"placement_id\": \"pm-auction\"\n  },\n  \"device\": {\n    \"type\": \"smartwatch\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 415\", () => pm.response.to.have.status(415));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bid negative wrong content-type",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "hello world"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "text/plain"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.variables.set(\"oversized_payload\", JSON.stringify({",
+                  "  id: \"r-oversized\",",
+                  "  imp: { id: \"1\", placement_id: \"pm-auction\" },",
+                  "  site: { domain: \"x\".repeat(20000) }",
+                  "}));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 413\", () => pm.response.to.have.status(413));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bid negative body too large",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{{oversized_payload}}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Bid negative invalid JSON",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\"id\": \"r-broken\","
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        }
+      ],
+      "name": "03 Bid happy path"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204 no_eligible\", () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_eligible\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting geo mismatch DE",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-geo-de\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-geo\"\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"DE\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Campaign GEO matched\", () => {",
+                  "  pm.expect(pm.response.json().campaign_id).to.eql(pm.collectionVariables.get(\"camp_geo_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting geo match US",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-geo-us\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-geo\"\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"US\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204 no_eligible\", () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_eligible\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting device mismatch desktop",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-dev-mismatch\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-auction\"\n  },\n  \"device\": {\n    \"type\": \"desktop\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204 no_eligible\", () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_eligible\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting size mismatch 728x90",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-size-mismatch\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 728,\n    \"h\": 90\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204 no_eligible\", () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_eligible\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting unknown placement",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-unk-placement\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"unknown-slot-xyz\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204 no_eligible\", () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_eligible\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting hour mismatch via test time",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-hr-miss\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-hours\"\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-PulseBid-Test-Time",
+                "value": "2026-11-18T10:00:00Z"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Campaign HOURS matched\", () => {",
+                  "  pm.expect(pm.response.json().campaign_id).to.eql(pm.collectionVariables.get(\"camp_hours_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Targeting hour match via test time",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-hr-match\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-hours\"\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-PulseBid-Test-Time",
+                "value": "2026-11-18T03:30:00Z"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        }
+      ],
+      "name": "04 Targeting"
+    },
+    {
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Campaign A wins at 2.01\", () => {",
+                  "  pm.expect(b.campaign_id).to.eql(pm.collectionVariables.get(\"camp_a_id\"));",
+                  "  pm.expect(b.price).to.eql(2.01);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction two bidders - A wins with 2.01",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-auc-ab-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-auction\",\n    \"bidfloor\": 1.00\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction single bidder - pause Campaign B",
+          "request": {
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_b_id}}/pause"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 2500);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction single bidder - wait for snapshot refresh",
+          "request": {
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Campaign A wins alone at 1.01\", () => {",
+                  "  pm.expect(b.campaign_id).to.eql(pm.collectionVariables.get(\"camp_a_id\"));",
+                  "  pm.expect(b.price).to.eql(1.01);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction single bidder - A wins with 1.01",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-auc-a-only-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-auction\",\n    \"bidfloor\": 1.00\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction single bidder - reactivate Campaign B",
+          "request": {
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "method": "POST",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_b_id}}/activate"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 2500);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction single bidder - wait for reactivate refresh",
+          "request": {
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204 below_floor\", () => {",
+                  "  pm.response.to.have.status(204);",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"below_floor\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction floor above all bids 5.00",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-auc-floor5-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-auction\",\n    \"bidfloor\": 5.00\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction tie bids - set Campaign A max bid 2.00",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"max_bid_cpm\": 2.00\n}"
+            },
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 2500);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction tie bids - wait for snapshot refresh",
+          "request": {
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "const aId = pm.collectionVariables.get(\"camp_a_id\");",
+                  "const bId = pm.collectionVariables.get(\"camp_b_id\");",
+                  "const expectedWinner = aId < bId ? aId : bId;",
+                  "pm.test(\"Tie broken lexicographically\", () => {",
+                  "  pm.expect(b.campaign_id).to.eql(expectedWinner);",
+                  "  pm.expect(b.price).to.eql(2.00);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction tie bids - tie broken lexicographically at 2.00",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"r-auc-tie-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"1\",\n    \"placement_id\": \"pm-auction\",\n    \"bidfloor\": 1.00\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction tie bids - restore Campaign A max bid 3.00",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"max_bid_cpm\": 3.00\n}"
+            },
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_a_id}}"
+          }
+        },
+        {
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "setTimeout(() => {}, 2500);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "name": "Auction tie bids - wait for restore snapshot refresh",
+          "request": {
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "method": "GET",
+            "url": "{{campaign_url}}/v1/snapshot"
+          }
+        }
+      ],
+      "name": "05 Floor and Auction"
+    },
+    {
+      "name": "06 Budget",
+      "item": [
+        {
+          "name": "01 Reset budget before test",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_budget_id}}/budget/reset"
+          }
+        },
+        {
+          "name": "02 Bid on pm-budget 1 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-1\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "03 Bid on pm-budget 2 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-2\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "04 Bid on pm-budget 3 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-3\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "05 Bid on pm-budget 4 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-4\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "06 Bid on pm-budget 5 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-5\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "07 Bid on pm-budget 6 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-6\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "08 Bid on pm-budget 7 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-7\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "09 Bid on pm-budget 8 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-8\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "10 Bid on pm-budget 9 of 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-9\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "11 Bid on pm-budget 10 - budget exhausted",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 204\", () => pm.response.to.have.status(204));",
+                  "pm.test(\"Reason is budget\", () => pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"budget\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-10\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "12 Get campaign budget status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"spent_micros == 9090\", () => pm.expect(b.spent_micros).to.eql(9090));",
+                  "pm.test(\"remaining_micros == 910\", () => pm.expect(b.remaining_micros).to.eql(910));",
+                  "pm.test(\"spent_micros <= daily_budget_micros\", () => pm.expect(b.spent_micros).to.be.at.most(b.daily_budget_micros));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_budget_id}}/budget"
+          }
+        },
+        {
+          "name": "13 Reset budget again",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status ok\", () => pm.expect(pm.response.json().status).to.eql(\"ok\"));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{campaign_url}}/v1/campaigns/{{camp_budget_id}}/budget/reset"
+          }
+        },
+        {
+          "name": "14 Bid after reset succeeds",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Campaign is camp_budget_id\", () => pm.expect(res.campaign_id).to.eql(pm.collectionVariables.get(\"camp_budget_id\")));",
+                  "pm.test(\"Price is 1.01\", () => pm.expect(res.price).to.eql(1.01));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-PulseBid-Clear-Exhausted",
+                "value": "true"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-budget-after-reset\",\n    \"placement_id\": \"pm-budget\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 1.0\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        }
+      ]
+    },
+    {
+      "name": "08 Events",
+      "item": [
+        {
+          "name": "01 Bid to obtain signed event URLs",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 filled\", () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"Signed URLs present\", () => {",
+                  "  pm.expect(b.impression_url).to.include(\"/v1/events/impression?t=\");",
+                  "  pm.expect(b.click_url).to.include(\"/v1/events/click?t=\");",
+                  "});",
+                  "pm.test(\"Placeholders substituted in adm\", () => {",
+                  "  pm.expect(b.adm).to.not.include(\"{impression_url}\");",
+                  "  pm.expect(b.adm).to.not.include(\"{click_url}\");",
+                  "});",
+                  "const tok = b.impression_url.split(\"t=\")[1];",
+                  "pm.collectionVariables.set(\"last_event_token\", tok);",
+                  "pm.collectionVariables.set(\"events_campaign_id\", b.campaign_id);",
+                  "pm.collectionVariables.set(\"events_click_url\", b.click_url);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"id\": \"{{$guid}}\",\n  \"imp\": {\n    \"id\": \"i-events-1\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "02 Impression tracking pixel",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type is image/gif\", () => {",
+                  "  const ct = pm.response.headers.get(\"Content-Type\") || \"\";",
+                  "  pm.expect(ct).to.include(\"image/gif\");",
+                  "});",
+                  "pm.test(\"Cache-Control is no-store\", () => {",
+                  "  const cc = pm.response.headers.get(\"Cache-Control\") || \"\";",
+                  "  pm.expect(cc).to.include(\"no-store\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/v1/events/impression?t={{last_event_token}}"
+          }
+        },
+        {
+          "name": "03 Click tracking redirect",
+          "protocolProfileBehavior": {
+            "followRedirects": false
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 302 Found\", () => pm.response.to.have.status(302));",
+                  "pm.test(\"Location header is destination landing URL\", () => {",
+                  "  const loc = pm.response.headers.get(\"Location\");",
+                  "  pm.expect(loc).to.be.a(\"string\").and.not.empty;",
+                  "});",
+                  "pm.test(\"Cache-Control is no-store\", () => {",
+                  "  const cc = pm.response.headers.get(\"Cache-Control\") || \"\";",
+                  "  pm.expect(cc).to.include(\"no-store\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/v1/events/click?t={{last_event_token}}"
+          }
+        },
+        {
+          "name": "04 Tampered token returns 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400 Bad Request\", () => pm.response.to.have.status(400));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Error code is invalid_token\", () => {",
+                  "  pm.expect(body.error.code).to.eql(\"invalid_token\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/v1/events/impression?t=tampered-token-12345"
+          }
+        },
+        {
+          "name": "05 Expired token returns 410",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 410 Gone\", () => pm.response.to.have.status(410));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"Error code is token_expired\", () => {",
+                  "  pm.expect(body.error.code).to.eql(\"token_expired\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-PulseBid-Test-Time",
+                "value": "2028-11-18T10:00:00Z"
+              }
+            ],
+            "url": "{{gateway_url}}/v1/events/impression?t={{last_event_token}}"
+          }
+        },
+        {
+          "name": "06 Duplicate impression fire returns 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type is image/gif\", () => {",
+                  "  const ct = pm.response.headers.get(\"Content-Type\") || \"\";",
+                  "  pm.expect(ct).to.include(\"image/gif\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/v1/events/impression?t={{last_event_token}}"
+          }
+        },
+        {
+          "name": "07 Third impression fire returns 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Content-Type is image/gif\", () => {",
+                  "  const ct = pm.response.headers.get(\"Content-Type\") || \"\";",
+                  "  pm.expect(ct).to.include(\"image/gif\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/v1/events/impression?t={{last_event_token}}"
+          }
+        },
+        {
+          "name": "08 Second click tracking redirect",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 302 Found\", () => pm.response.to.have.status(302));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_url}}/v1/events/click?t={{last_event_token}}"
+          }
+        },
+        {
+          "name": "09 Poll report until impressions == 1",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const tries = Number(pm.collectionVariables.get(\"poll_tries\") || 0);",
+                  "if (tries > 0) {",
+                  "  setTimeout(() => {}, 250);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "const expected = 1, maxTries = 20;",
+                  "const tries = Number(pm.collectionVariables.get(\"poll_tries\") || 0);",
+                  "const res = pm.response.json();",
+                  "const imps = res.totals?.impressions ?? 0;",
+                  "const clicks = res.totals?.clicks ?? 0;",
+                  "if (imps !== expected && tries < maxTries) {",
+                  "  pm.collectionVariables.set(\"poll_tries\", tries + 1);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(\"poll_tries\");",
+                  "  pm.test(`impressions == ${expected}`, () => pm.expect(imps).to.eql(expected));",
+                  "  pm.test(\"clicks >= 1\", () => pm.expect(clicks).to.be.at.least(1));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns/{{events_campaign_id}}?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z&granularity=total"
+          }
+        }
+      ]
+    },
+    {
+      "name": "09 Reporting",
+      "item": [
+        {
+          "name": "01 Missing from returns 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400 Bad Request\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error envelope\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.exist;",
+                  "  pm.expect(b.error.code).to.eql(\"invalid_request\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns?to=2026-11-30T00:00:00Z"
+          }
+        },
+        {
+          "name": "02 From after to returns 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400 Bad Request\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error envelope\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.exist;",
+                  "  pm.expect(b.error.code).to.eql(\"invalid_request\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns?from=2026-11-30T00:00:00Z&to=2026-11-01T00:00:00Z"
+          }
+        },
+        {
+          "name": "03 Hour range over 31 days returns 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 400 Bad Request\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"error envelope\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.error).to.exist;",
+                  "  pm.expect(b.error.code).to.eql(\"invalid_request\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns?from=2026-10-01T00:00:00Z&to=2026-11-30T00:00:00Z&granularity=hour"
+          }
+        },
+        {
+          "name": "04 Missing API key returns 401",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "pm.request.headers.remove(\"X-API-Key\");"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{reporting_url}}/v1/reports/campaigns?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z"
+          }
+        },
+        {
+          "name": "05 Unknown campaign returns zeros and 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"data is empty array\", () => {",
+                  "  pm.expect(res.data).to.be.an(\"array\");",
+                  "  pm.expect(res.data).to.be.empty;",
+                  "});",
+                  "pm.test(\"totals zeros\", () => {",
+                  "  pm.expect(res.totals.impressions).to.eql(0);",
+                  "  pm.expect(res.totals.clicks).to.eql(0);",
+                  "  pm.expect(res.totals.spend).to.eql(0);",
+                  "  pm.expect(res.totals.ctr).to.eql(0);",
+                  "  pm.expect(res.totals.win_rate).to.eql(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns/00000000-0000-0000-0000-000000000000?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z&granularity=total"
+          }
+        },
+        {
+          "name": "06 Report total granularity shape",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"granularity is total\", () => pm.expect(res.granularity).to.eql(\"total\"));",
+                  "pm.test(\"rows omit bucket\", () => {",
+                  "  res.data.forEach(row => {",
+                  "    pm.expect(row.bucket).to.be.undefined;",
+                  "    pm.expect(row.currency).to.eql(\"USD\");",
+                  "    if (row.impressions > 0) {",
+                  "      pm.expect(row.ctr).to.be.closeTo(row.clicks / row.impressions, 0.0001);",
+                  "    }",
+                  "    if (row.bids > 0) {",
+                  "      pm.expect(row.win_rate).to.be.closeTo(row.wins / row.bids, 0.0001);",
+                  "    }",
+                  "  });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z&granularity=total"
+          }
+        },
+        {
+          "name": "07 Report hour granularity shape",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"granularity is hour\", () => pm.expect(res.granularity).to.eql(\"hour\"));",
+                  "pm.test(\"rows contain bucket and currency\", () => {",
+                  "  res.data.forEach(row => {",
+                  "    pm.expect(row.bucket).to.be.a(\"string\");",
+                  "    pm.expect(row.currency).to.eql(\"USD\");",
+                  "  });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns?from=2026-11-19T00:00:00Z&to=2026-11-20T00:00:00Z&granularity=hour"
+          }
+        },
+        {
+          "name": "08 Report day granularity shape",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"granularity is day\", () => pm.expect(res.granularity).to.eql(\"day\"));",
+                  "pm.test(\"rows contain bucket ending in T00:00:00Z\", () => {",
+                  "  res.data.forEach(row => {",
+                  "    pm.expect(row.bucket).to.be.a(\"string\");",
+                  "    pm.expect(row.bucket).to.include(\"T00:00:00Z\");",
+                  "  });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z&granularity=day"
+          }
+        },
+        {
+          "name": "09 Single campaign report math and totals",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"HTTP 200 OK\", () => pm.response.to.have.status(200));",
+                  "const res = pm.response.json();",
+                  "pm.test(\"Totals and calculations valid\", () => {",
+                  "  pm.expect(res.totals.impressions).to.be.at.least(1);",
+                  "  pm.expect(res.totals.ctr).to.be.closeTo(res.totals.clicks / res.totals.impressions, 0.0001);",
+                  "  pm.expect(res.totals.spend).to.be.at.least(0.001);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{api_key}}"
+              }
+            ],
+            "url": "{{reporting_url}}/v1/reports/campaigns/{{events_campaign_id}}?from=2026-11-01T00:00:00Z&to=2026-11-30T00:00:00Z&granularity=total"
+          }
+        }
+      ]
+    },
+    {
+      "item": [
+        {
+          "name": "01 Bidder 1 tune latency 500ms",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Latency set to 500ms\", () => pm.expect(pm.response.json().latency_ms).to.eql(500));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latency_ms\": 500\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        },
+        {
+          "name": "02 Slow bidder isolated within budget",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200 filled\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Latency under budget\", () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(Number(pm.environment.get(\"latency_budget_ms\") || 120) + 30);",
+                  "});",
+                  "pm.test(\"Timed out bidder recorded in debug header\", () => {",
+                  "  const debug = pm.response.headers.get(\"X-PulseBid-Debug\") || \"\";",
+                  "  pm.expect(debug).to.include(\"timed_out=1\");",
+                  "});",
+                  "pm.test(\"Healthy bidder won\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.campaign_id).to.eql(pm.collectionVariables.get(\"camp_b_id\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"req-resilience-slow-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"imp-slow\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "03 Reset bidder 1 latency",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Latency reset to 0\", () => pm.expect(pm.response.json().latency_ms).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latency_ms\": 0\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        },
+        {
+          "name": "04 Bidder 1 tune error rate 1.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Error rate set to 1\", () => pm.expect(pm.response.json().error_rate).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"error_rate\": 1\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        },
+        {
+          "name": "05 Error bidder isolated",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200 filled\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Errors recorded in debug header\", () => {",
+                  "  const debug = pm.response.headers.get(\"X-PulseBid-Debug\") || \"\";",
+                  "  pm.expect(debug).to.include(\"errors=1\");",
+                  "});",
+                  "pm.test(\"Healthy bidder won\", () => {",
+                  "  const b = pm.response.json();",
+                  "  pm.expect(b.campaign_id).to.eql(pm.collectionVariables.get(\"camp_b_id\"));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"req-resilience-err-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"imp-err\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "06 Bidder 2 tune error rate 1.0",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Bidder 2 error rate set to 1\", () => pm.expect(pm.response.json().error_rate).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"error_rate\": 1\n}"
+            },
+            "url": "http://{{bidder_host}}:9102/admin/config"
+          }
+        },
+        {
+          "name": "07 All bidders error returns 204 no_bids",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204 No Content\", () => pm.response.to.have.status(204));",
+                  "pm.test(\"Reason header is no_bids\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_bids\");",
+                  "});",
+                  "pm.test(\"Debug header shows 0 valid bids\", () => {",
+                  "  const debug = pm.response.headers.get(\"X-PulseBid-Debug\") || \"\";",
+                  "  pm.expect(debug).to.include(\"valid_bids=0\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"req-resilience-all-err-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"imp-all-err\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "08 Reset bidders 1 and 2 error rate",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({",
+                  "  url: \"http://\" + pm.environment.get(\"bidder_host\") + \":9102/admin/config\",",
+                  "  method: \"POST\",",
+                  "  header: { \"Content-Type\": \"application/json\" },",
+                  "  body: { mode: \"raw\", raw: JSON.stringify({ error_rate: 0 }) }",
+                  "}, () => {});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Bidder 1 error rate reset\", () => pm.expect(pm.response.json().error_rate).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"error_rate\": 0\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        },
+        {
+          "name": "09 Tune all bidders timeout rate 1.0",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({",
+                  "  url: \"http://\" + pm.environment.get(\"bidder_host\") + \":9102/admin/config\",",
+                  "  method: \"POST\",",
+                  "  header: { \"Content-Type\": \"application/json\" },",
+                  "  body: { mode: \"raw\", raw: JSON.stringify({ timeout_rate: 1 }) }",
+                  "}, () => {});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Bidder 1 timeout rate set to 1\", () => pm.expect(pm.response.json().timeout_rate).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timeout_rate\": 1\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        },
+        {
+          "name": "10 All bidders timeout returns 204 within budget",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 204 No Content\", () => pm.response.to.have.status(204));",
+                  "pm.test(\"Reason header is no_bids\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"X-PulseBid-Reason\")).to.eql(\"no_bids\");",
+                  "});",
+                  "pm.test(\"Response time bounded by deadline\", () => {",
+                  "  pm.expect(pm.response.responseTime).to.be.below(160);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"req-resilience-all-timeout-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"imp-all-to\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "11 Reset all bidders timeout rate",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest({",
+                  "  url: \"http://\" + pm.environment.get(\"bidder_host\") + \":9102/admin/config\",",
+                  "  method: \"POST\",",
+                  "  header: { \"Content-Type\": \"application/json\" },",
+                  "  body: { mode: \"raw\", raw: JSON.stringify({ timeout_rate: 0 }) }",
+                  "}, () => {});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Bidder 1 timeout rate reset\", () => pm.expect(pm.response.json().timeout_rate).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timeout_rate\": 0\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        },
+        {
+          "name": "12 Repeated failing requests trip circuit breaker",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const loopCount = Number(pm.collectionVariables.get(\"cb_loop\") || 0);",
+                  "if (loopCount === 0) {",
+                  "  pm.sendRequest({",
+                  "    url: \"http://\" + pm.environment.get(\"bidder_host\") + \":9101/admin/config\",",
+                  "    method: \"POST\",",
+                  "    header: { \"Content-Type\": \"application/json\" },",
+                  "    body: { mode: \"raw\", raw: JSON.stringify({ error_rate: 1 }) }",
+                  "  }, () => {});",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const maxLoops = 22;",
+                  "const loop = Number(pm.collectionVariables.get(\"cb_loop\") || 0);",
+                  "if (loop < maxLoops) {",
+                  "  pm.collectionVariables.set(\"cb_loop\", loop + 1);",
+                  "  postman.setNextRequest(pm.info.requestName);",
+                  "} else {",
+                  "  pm.collectionVariables.unset(\"cb_loop\");",
+                  "  pm.test(\"Status is 200 filled from bidder 2\", () => pm.response.to.have.status(200));",
+                  "  pm.test(\"Fast response time with tripped circuit breaker\", () => {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(120);",
+                  "  });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"req-resilience-cb-{{run_id}}\",\n  \"imp\": {\n    \"id\": \"imp-cb\",\n    \"placement_id\": \"pm-auction\",\n    \"w\": 300,\n    \"h\": 250,\n    \"bidfloor\": 0.50\n  },\n  \"device\": {\n    \"type\": \"mobile\"\n  },\n  \"geo\": {\n    \"country\": \"IN\"\n  }\n}"
+            },
+            "url": "{{gateway_url}}/v1/bid"
+          }
+        },
+        {
+          "name": "13 Final cleanup reset all bidders to default",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const defaults = {",
+                  "  latency_ms: 0,",
+                  "  jitter_ms: 0,",
+                  "  error_rate: 0,",
+                  "  timeout_rate: 0,",
+                  "  no_bid_rate: 0,",
+                  "  bid_mode: \"fixed\"",
+                  "};",
+                  "[9102, 9103, 9104, 9105, 9106, 9107, 9108].forEach(port => {",
+                  "  pm.sendRequest({",
+                  "    url: \"http://\" + pm.environment.get(\"bidder_host\") + \":\" + port + \"/admin/config\",",
+                  "    method: \"POST\",",
+                  "    header: { \"Content-Type\": \"application/json\" },",
+                  "    body: { mode: \"raw\", raw: JSON.stringify(defaults) }",
+                  "  }, () => {});",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status is 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Bidder 1 defaults restored\", () => {",
+                  "  const cfg = pm.response.json();",
+                  "  pm.expect(cfg.latency_ms).to.eql(0);",
+                  "  pm.expect(cfg.error_rate).to.eql(0);",
+                  "  pm.expect(cfg.timeout_rate).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latency_ms\": 0,\n  \"jitter_ms\": 0,\n  \"error_rate\": 0,\n  \"timeout_rate\": 0,\n  \"no_bid_rate\": 0,\n  \"bid_mode\": \"fixed\"\n}"
+            },
+            "url": "http://{{bidder_host}}:9101/admin/config"
+          }
+        }
+      ],
+      "name": "10 Resilience"
+    },
+    {
+      "name": "11 Observability",
+      "item": [
+        {
+          "name": "Metrics smoke - bid-gateway",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{gateway_admin_url}}/metrics"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Gateway metrics present\", () => {",
+                  "  const body = pm.response.text();",
+                  "  pm.expect(body).to.include(\"http_server_requests_total\");",
+                  "  pm.expect(body).to.include(\"bid_requests_total\");",
+                  "  pm.expect(body).to.include(\"bid_duration_seconds\");",
+                  "  pm.expect(body).to.include(\"bidder_requests_total\");",
+                  "  pm.expect(body).to.include(\"bidder_latency_seconds\");",
+                  "  pm.expect(body).to.include(\"bidder_inflight\");",
+                  "  pm.expect(body).to.include(\"snapshot_version\");",
+                  "  pm.expect(body).to.include(\"snapshot_age_seconds\");",
+                  "  pm.expect(body).to.include(\"snapshot_campaigns\");",
+                  "  pm.expect(body).to.include(\"events_published_total\");",
+                  "  pm.expect(body).to.include(\"event_buffer_depth\");",
+                  "  pm.expect(body).to.include(\"redis_pool_acquired\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Metrics smoke - campaign-service",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{campaign_admin_url}}/metrics"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Campaign service metrics present\", () => {",
+                  "  const body = pm.response.text();",
+                  "  pm.expect(body).to.include(\"http_server_requests_total\");",
+                  "  pm.expect(body).to.include(\"db_pool_acquired\");",
+                  "  pm.expect(body).to.include(\"db_pool_idle\");",
+                  "  pm.expect(body).to.include(\"redis_pool_acquired\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Metrics smoke - event-aggregator",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{aggregator_admin_url}}/metrics"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Event aggregator metrics present\", () => {",
+                  "  const body = pm.response.text();",
+                  "  pm.expect(body).to.include(\"http_server_requests_total\");",
+                  "  pm.expect(body).to.include(\"aggregator_batch_size\");",
+                  "  pm.expect(body).to.include(\"aggregator_batch_duration_seconds\");",
+                  "  pm.expect(body).to.include(\"aggregator_events_total\");",
+                  "  pm.expect(body).to.include(\"aggregator_consumer_lag\");",
+                  "  pm.expect(body).to.include(\"db_pool_acquired\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Metrics smoke - mock-bidder",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "http://{{bidder_host}}:9101/metrics"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Mock bidder metrics present\", () => {",
+                  "  const body = pm.response.text();",
+                  "  pm.expect(body).to.include(\"http_server_requests_total\");",
+                  "  pm.expect(body).to.include(\"http_server_request_duration_seconds\");",
+                  "  pm.expect(body).to.include(\"bidder_decisions_total\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+POST http://localhost:8080/v1/bid
+Content-Type: application/json
+@loadtest/vegeta/bid.json

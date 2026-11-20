@@ -1,0 +1,153 @@
+openapi: 3.0.3
+info:
+  title: PulseBid admin API
+  version: 0.1.0
+  description: >-
+    Private operational listeners shared by the service commands. Readiness
+    reflects startup and draining; campaign readiness also checks PostgreSQL.
+    Other dependencies are wired in their assigned phases. No authentication is required on these
+    listeners, which must remain on trusted networks.
+servers:
+  - url: http://localhost:8090
+    description: bid-gateway
+  - url: http://localhost:8091
+    description: campaign-service
+  - url: http://localhost:8093
+    description: event-aggregator
+  - url: http://localhost:8094
+    description: mock-bidder operational shell
+  - url: http://localhost:8095
+    description: seed operational shell (until Phase 4)
+paths:
+  /healthz:
+    get:
+      operationId: liveness
+      responses:
+        '200':
+          description: Process is alive, including while draining.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+  /readyz:
+    get:
+      operationId: readiness
+      responses:
+        '200':
+          description: Startup gate is open and all configured checks pass.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+        '503':
+          description: Starting, draining, or a dependency check failed.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /metrics:
+    get:
+      operationId: metrics
+      responses:
+        '200':
+          description: Service-local Prometheus metrics, including Go/process collectors.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+          content:
+            text/plain:
+              schema:
+                type: string
+  /debug/pprof/:
+    get:
+      operationId: profileIndex
+      responses:
+        '200':
+          description: Standard Go pprof index.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+          content:
+            text/html:
+              schema:
+                type: string
+  /debug/pprof/{profile}:
+    parameters:
+      - in: path
+        name: profile
+        required: true
+        schema:
+          type: string
+        description: Standard Go profile (heap, goroutine, allocs, mutex, block, profile, trace, cmdline, symbol).
+    get:
+      operationId: runtimeProfile
+      responses:
+        '200':
+          description: Standard Go pprof output; profile/trace honor the seconds query parameter.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+        '400':
+          description: Invalid profiling parameters (common JSON error envelope).
+        '404':
+          description: Unknown profile (common JSON error envelope).
+  /debug/pprof/symbol:
+    post:
+      operationId: resolveSymbols
+      responses:
+        '200':
+          description: Standard Go pprof symbol lookup.
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestID'
+components:
+  headers:
+    RequestID:
+      description: Echoed printable X-Request-Id (1–128 bytes), or generated UUIDv7.
+      schema:
+        type: string
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, request_id]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, unauthorized, not_found, conflict, payload_too_large, unsupported_media_type, invalid_token, token_expired, unavailable, internal]
+            message:
+              type: string
+            request_id:
+              type: string
+            details:
+              type: array
+              items:
+                type: object
+                required: [field, issue]
+                properties:
+                  field:
+                    type: string
+                  issue:
+                    type: string

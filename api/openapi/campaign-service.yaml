@@ -1,0 +1,1846 @@
+"openapi": "3.0.3"
+"info":
+  "title": "PulseBid campaign service"
+  "version": "0.3.0"
+  "description": "Phase 3 authenticated CRUD and catalog snapshot API. Budget endpoints arrive in Phase 6. Request bodies are bounded to 512 KiB; monetary arithmetic uses exact integer micros."
+"servers":
+  -
+    "url": "http://localhost:8081"
+"security":
+  -
+    "APIKey": []
+"paths":
+  "/v1/snapshot":
+    "get":
+      "operationId": "getCatalogSnapshot"
+      "description": "Full catalog snapshot in protobuf JSON using snake_case proto field names. Int64 version and money micros are strings, enums use symbolic names, and timestamps use RFC 3339 UTC. Includes only active campaigns with active advertisers, enabled bidders, and active creatives. Date windows are evaluated later by the gateway."
+      "parameters":
+        - "name": "If-None-Match"
+          "in": "header"
+          "schema":
+            "type": "string"
+          "description": "Previously returned quoted decimal version ETag; weak tags, lists, and * are supported."
+      "responses":
+        "200":
+          "description": "Current full catalog. Cached data is reused until the database version changes."
+          "headers":
+            "ETag":
+              "schema":
+                "type": "string"
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/CatalogSnapshot"
+        "304":
+          "description": "The validator matches the current catalog version; no response body."
+          "headers":
+            "ETag":
+              "schema":
+                "type": "string"
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/advertisers":
+    "get":
+      "operationId": "listAdvertisers"
+      "description": "Order: created_at DESC, id DESC. Archived records remain visible."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/AdvertiserPage"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+      "parameters":
+        -
+          "name": "limit"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "default": 50
+            "minimum": 1
+            "maximum": 200
+        -
+          "name": "cursor"
+          "in": "query"
+          "schema":
+            "type": "string"
+          "description": "Opaque keyset cursor bound to the resource and filters. Keep the same filters for subsequent pages."
+    "post":
+      "operationId": "createAdvertiser"
+      "description": "Create a advertiser."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/AdvertiserCreate"
+      "responses":
+        "201":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Advertiser"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/advertisers/{id}":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "get":
+      "operationId": "getAdvertiser"
+      "description": "Fetch one record."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Advertiser"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "patch":
+      "operationId": "patchAdvertiser"
+      "description": "Partial update; omitted fields are preserved. Null clears only nullable fields. Unknown/read-only fields are rejected."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/AdvertiserPatch"
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Advertiser"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "delete":
+      "operationId": "deleteAdvertiser"
+      "description": "Soft archive; retains the record."
+      "responses":
+        "204":
+          "description": "Deleted or archived successfully"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/bidders":
+    "get":
+      "operationId": "listBidders"
+      "description": "Order: created_at DESC, id DESC. Archived records remain visible."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/BidderPage"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+      "parameters":
+        -
+          "name": "limit"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "default": 50
+            "minimum": 1
+            "maximum": 200
+        -
+          "name": "cursor"
+          "in": "query"
+          "schema":
+            "type": "string"
+          "description": "Opaque keyset cursor bound to the resource and filters. Keep the same filters for subsequent pages."
+    "post":
+      "operationId": "createBidder"
+      "description": "Create a bidder."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/BidderCreate"
+      "responses":
+        "201":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Bidder"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/bidders/{id}":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    "get":
+      "operationId": "getBidder"
+      "description": "Fetch one record."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Bidder"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "patch":
+      "operationId": "patchBidder"
+      "description": "Partial update; omitted fields are preserved. Null clears only nullable fields. Unknown/read-only fields are rejected."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/BidderPatch"
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Bidder"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "delete":
+      "operationId": "deleteBidder"
+      "description": "Hard delete; any campaign reference produces 409."
+      "responses":
+        "204":
+          "description": "Deleted or archived successfully"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns":
+    "get":
+      "operationId": "listCampaigns"
+      "description": "Order: created_at DESC, id DESC. Archived records remain visible."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/CampaignPage"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+      "parameters":
+        -
+          "name": "limit"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "default": 50
+            "minimum": 1
+            "maximum": 200
+        -
+          "name": "cursor"
+          "in": "query"
+          "schema":
+            "type": "string"
+          "description": "Opaque keyset cursor bound to the resource and filters. Keep the same filters for subsequent pages."
+        -
+          "name": "advertiser_id"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "format": "uuid"
+        -
+          "name": "status"
+          "in": "query"
+          "schema":
+            "type": "string"
+            "enum":
+              - "draft"
+              - "active"
+              - "paused"
+              - "archived"
+    "post":
+      "operationId": "createCampaign"
+      "description": "Creates a draft campaign."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CampaignCreate"
+      "responses":
+        "201":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Campaign"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "get":
+      "operationId": "getCampaign"
+      "description": "Fetch one record."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Campaign"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "patch":
+      "operationId": "patchCampaign"
+      "description": "Partial update; omitted fields are preserved. Null clears only nullable fields. Unknown/read-only fields are rejected. Status changes enforce activation preconditions; archived is terminal."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CampaignPatch"
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Campaign"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "delete":
+      "operationId": "deleteCampaign"
+      "description": "Soft archive; retains the record."
+      "responses":
+        "204":
+          "description": "Deleted or archived successfully"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}/activate":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "post":
+      "operationId": "activateCampaign"
+      "description": "Requires at least one active creative. Draft and paused campaigns may activate; archived campaigns cannot."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Campaign"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}/pause":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "post":
+      "operationId": "pauseCampaign"
+      "description": "An active campaign can pause; a draft campaign cannot."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Campaign"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}/targeting":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "get":
+      "operationId": "getTargeting"
+      "description": "Returns unrestricted defaults for an existing campaign with no saved rule."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Targeting"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "put":
+      "operationId": "replaceTargeting"
+      "description": "Full replacement; omitted arrays become empty, omitted timezone becomes UTC. Creates a missing rule."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/TargetingPut"
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Targeting"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}/budget":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+      -
+        "name": "X-PulseBid-Test-Time"
+        "in": "header"
+        "required": false
+        "schema":
+          "type": "string"
+          "format": "date-time"
+    "get":
+      "operationId": "getCampaignBudget"
+      "description": "Reads current daily budget spend and remaining amount from Redis."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/BudgetView"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}/budget/reset":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+      -
+        "name": "X-PulseBid-Test-Time"
+        "in": "header"
+        "required": false
+        "schema":
+          "type": "string"
+          "format": "date-time"
+    "post":
+      "operationId": "resetCampaignBudget"
+      "description": "Test-only endpoint to reset campaign spend in Redis. Guarded by ENABLE_TEST_ENDPOINTS."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "type": "object"
+                "properties":
+                  "status":
+                    "type": "string"
+                    "example": "ok"
+                  "campaign_id":
+                    "type": "string"
+                    "format": "uuid"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/campaigns/{id}/creatives":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "get":
+      "operationId": "listCreatives"
+      "description": "List this campaign's creatives."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/CreativePage"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+      "parameters":
+        -
+          "name": "limit"
+          "in": "query"
+          "schema":
+            "type": "integer"
+            "default": 50
+            "minimum": 1
+            "maximum": 200
+        -
+          "name": "cursor"
+          "in": "query"
+          "schema":
+            "type": "string"
+          "description": "Opaque keyset cursor bound to the resource and filters. Keep the same filters for subsequent pages."
+    "post":
+      "operationId": "createCreative"
+      "description": "Create an active creative by default."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CreativeCreate"
+      "responses":
+        "201":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Creative"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+  "/v1/creatives/{id}":
+    "parameters":
+      -
+        "name": "id"
+        "in": "path"
+        "required": true
+        "schema":
+          "type": "string"
+          "format": "uuid"
+    "get":
+      "operationId": "getCreative"
+      "description": "Fetch one creative."
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Creative"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "patch":
+      "operationId": "patchCreative"
+      "description": "Update creative fields; campaign_id is immutable."
+      "requestBody":
+        "required": true
+        "content":
+          "application/json":
+            "schema":
+              "$ref": "#/components/schemas/CreativePatch"
+      "responses":
+        "200":
+          "description": "Success"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+          "content":
+            "application/json":
+              "schema":
+                "$ref": "#/components/schemas/Creative"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+    "delete":
+      "operationId": "deleteCreative"
+      "description": "Hard delete the creative."
+      "responses":
+        "204":
+          "description": "Deleted or archived successfully"
+          "headers":
+            "X-Request-Id":
+              "schema":
+                "type": "string"
+        "400":
+          "$ref": "#/components/responses/Error400"
+        "401":
+          "$ref": "#/components/responses/Error401"
+        "404":
+          "$ref": "#/components/responses/Error404"
+        "409":
+          "$ref": "#/components/responses/Error409"
+        "413":
+          "$ref": "#/components/responses/Error413"
+        "415":
+          "$ref": "#/components/responses/Error415"
+        "500":
+          "$ref": "#/components/responses/Error500"
+        "503":
+          "$ref": "#/components/responses/Error503"
+"components":
+  "securitySchemes":
+    "APIKey":
+      "type": "apiKey"
+      "in": "header"
+      "name": "X-API-Key"
+  "responses":
+    "Error400":
+      "description": "Invalid input"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error401":
+      "description": "Missing or invalid X-API-Key"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error404":
+      "description": "Resource or route not found"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error409":
+      "description": "Unique/FK conflict or invalid campaign transition"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error413":
+      "description": "Body exceeds 512 KiB"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error415":
+      "description": "Content-Type must be application/json"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error500":
+      "description": "Internal error"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+    "Error503":
+      "description": "Database unavailable"
+      "headers":
+        "X-Request-Id":
+          "schema":
+            "type": "string"
+      "content":
+        "application/json":
+          "schema":
+            "$ref": "#/components/schemas/ErrorEnvelope"
+  "schemas":
+    "CatalogSnapshot":
+      "type": "object"
+      "required": ["version", "unchanged", "bidders", "campaigns", "generated_at"]
+      "properties":
+        "version":
+          "type": "string"
+          "pattern": "^[0-9]+$"
+          "description": "Exact protobuf int64 catalog version."
+        "unchanged":
+          "type": "boolean"
+          "enum": [false]
+        "generated_at":
+          "type": "string"
+          "format": "date-time"
+        "bidders":
+          "type": "array"
+          "items":
+            "type": "object"
+            "required": ["id", "endpoint_url", "timeout_ms"]
+            "properties":
+              "id": {"type": "string"}
+              "endpoint_url": {"type": "string", "format": "uri"}
+              "timeout_ms": {"type": "integer", "description": "0 means gateway default."}
+        "campaigns":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/CatalogCampaign"
+    "CatalogCampaign":
+      "type": "object"
+      "required": ["id", "advertiser_id", "bidder_id", "name", "daily_budget_micros", "max_bid_cpm_micros", "pacing_mode", "targeting", "creatives"]
+      "properties":
+        "id": {"type": "string", "format": "uuid"}
+        "advertiser_id": {"type": "string", "format": "uuid"}
+        "bidder_id": {"type": "string"}
+        "name": {"type": "string"}
+        "daily_budget_micros": {"type": "string", "pattern": "^[0-9]+$"}
+        "max_bid_cpm_micros": {"type": "string", "pattern": "^[0-9]+$"}
+        "pacing_mode":
+          "type": "string"
+          "enum": ["PACING_MODE_ASAP", "PACING_MODE_EVEN"]
+        "start_at": {"type": "string", "format": "date-time", "description": "Omitted when unset."}
+        "end_at": {"type": "string", "format": "date-time", "description": "Omitted when unset."}
+        "targeting":
+          "type": "object"
+          "properties":
+            "countries": {"type": "array", "items": {"type": "string"}}
+            "device_types": {"type": "array", "items": {"type": "string"}}
+            "placement_ids": {"type": "array", "items": {"type": "string"}}
+            "hours_of_day": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 23}}
+            "timezone": {"type": "string"}
+        "creatives":
+          "type": "array"
+          "description": "Active creatives ordered by ID."
+          "items":
+            "type": "object"
+            "properties":
+              "id": {"type": "string", "format": "uuid"}
+              "format": {"type": "string"}
+              "width": {"type": "integer", "description": "0 when unspecified."}
+              "height": {"type": "integer", "description": "0 when unspecified."}
+              "markup": {"type": "string"}
+              "landing_url": {"type": "string", "format": "uri"}
+    "AdvertiserCreate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "contact_email":
+          "type": "string"
+          "format": "email"
+          "nullable": true
+      "required":
+        - "name"
+    "AdvertiserPatch":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "contact_email":
+          "type": "string"
+          "format": "email"
+          "nullable": true
+        "status":
+          "type": "string"
+          "enum":
+            - "active"
+            - "archived"
+    "BidderCreate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "endpoint_url":
+          "type": "string"
+          "format": "uri"
+          "pattern": "^https?://"
+        "timeout_ms":
+          "type": "integer"
+          "minimum": 10
+          "maximum": 1000
+          "nullable": true
+        "enabled":
+          "type": "boolean"
+          "default": true
+      "required":
+        - "id"
+        - "name"
+        - "endpoint_url"
+    "BidderPatch":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "endpoint_url":
+          "type": "string"
+          "format": "uri"
+          "pattern": "^https?://"
+        "timeout_ms":
+          "type": "integer"
+          "minimum": 10
+          "maximum": 1000
+          "nullable": true
+        "enabled":
+          "type": "boolean"
+          "default": true
+    "CampaignCreate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "advertiser_id":
+          "type": "string"
+          "format": "uuid"
+        "bidder_id":
+          "type": "string"
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "daily_budget":
+          "oneOf":
+            -
+              "type": "number"
+              "exclusiveMinimum": true
+              "minimum": 0
+              "multipleOf": 0.000001
+            -
+              "type": "string"
+              "description": "Exact positive decimal, at most six fractional places; exponent notation is accepted when exactly representable."
+          "description": "USD; > 0 and <= 1000000."
+        "max_bid_cpm":
+          "oneOf":
+            -
+              "type": "number"
+              "exclusiveMinimum": true
+              "minimum": 0
+              "multipleOf": 0.000001
+            -
+              "type": "string"
+              "description": "Exact positive decimal, at most six fractional places; exponent notation is accepted when exactly representable."
+          "description": "USD CPM; > 0 and <= 1000."
+        "pacing_mode":
+          "type": "string"
+          "enum":
+            - "asap"
+            - "even"
+          "default": "even"
+        "start_at":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "end_at":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+      "required":
+        - "advertiser_id"
+        - "bidder_id"
+        - "name"
+        - "daily_budget"
+        - "max_bid_cpm"
+    "CampaignPatch":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "advertiser_id":
+          "type": "string"
+          "format": "uuid"
+        "bidder_id":
+          "type": "string"
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "status":
+          "type": "string"
+          "enum":
+            - "draft"
+            - "active"
+            - "paused"
+            - "archived"
+        "daily_budget":
+          "oneOf":
+            -
+              "type": "number"
+              "exclusiveMinimum": true
+              "minimum": 0
+              "multipleOf": 0.000001
+            -
+              "type": "string"
+              "description": "Exact positive decimal, at most six fractional places; exponent notation is accepted when exactly representable."
+          "description": "USD; > 0 and <= 1000000."
+        "max_bid_cpm":
+          "oneOf":
+            -
+              "type": "number"
+              "exclusiveMinimum": true
+              "minimum": 0
+              "multipleOf": 0.000001
+            -
+              "type": "string"
+              "description": "Exact positive decimal, at most six fractional places; exponent notation is accepted when exactly representable."
+          "description": "USD CPM; > 0 and <= 1000."
+        "pacing_mode":
+          "type": "string"
+          "enum":
+            - "asap"
+            - "even"
+          "default": "even"
+        "start_at":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "end_at":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+    "CreativeCreate":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "format":
+          "type": "string"
+          "enum":
+            - "banner"
+            - "native"
+            - "video"
+        "width":
+          "type": "integer"
+          "minimum": 1
+          "nullable": true
+        "height":
+          "type": "integer"
+          "minimum": 1
+          "nullable": true
+        "markup":
+          "type": "string"
+          "minLength": 1
+          "description": "At most 65536 UTF-8 bytes."
+        "landing_url":
+          "type": "string"
+          "format": "uri"
+          "pattern": "^https?://"
+        "status":
+          "type": "string"
+          "enum":
+            - "active"
+            - "paused"
+          "default": "active"
+      "required":
+        - "name"
+        - "format"
+        - "markup"
+        - "landing_url"
+    "CreativePatch":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "format":
+          "type": "string"
+          "enum":
+            - "banner"
+            - "native"
+            - "video"
+        "width":
+          "type": "integer"
+          "minimum": 1
+          "nullable": true
+        "height":
+          "type": "integer"
+          "minimum": 1
+          "nullable": true
+        "markup":
+          "type": "string"
+          "minLength": 1
+          "description": "At most 65536 UTF-8 bytes."
+        "landing_url":
+          "type": "string"
+          "format": "uri"
+          "pattern": "^https?://"
+        "status":
+          "type": "string"
+          "enum":
+            - "active"
+            - "paused"
+          "default": "active"
+    "TargetingPut":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "countries":
+          "type": "array"
+          "items":
+            "type": "string"
+            "pattern": "^[A-Za-z]{2}$"
+          "default": []
+          "description": "ISO alpha-2 codes, normalized to uppercase and deduplicated."
+        "device_types":
+          "type": "array"
+          "items":
+            "type": "string"
+            "enum":
+              - "mobile"
+              - "desktop"
+              - "tablet"
+              - "ctv"
+          "default": []
+        "placement_ids":
+          "type": "array"
+          "items":
+            "type": "string"
+            "minLength": 1
+          "default": []
+        "hours_of_day":
+          "type": "array"
+          "items":
+            "type": "integer"
+            "minimum": 0
+            "maximum": 23
+          "default": []
+          "description": "Sorted and deduplicated."
+        "timezone":
+          "type": "string"
+          "default": "UTC"
+          "description": "IANA timezone; Local is not accepted."
+    "ErrorEnvelope":
+      "$ref": "./admin.yaml#/components/schemas/ErrorEnvelope"
+    "Advertiser":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "contact_email":
+          "type": "string"
+          "format": "email"
+          "nullable": true
+        "status":
+          "type": "string"
+          "enum":
+            - "active"
+            - "archived"
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+      "required":
+        - "id"
+        - "name"
+        - "contact_email"
+        - "status"
+        - "created_at"
+        - "updated_at"
+    "AdvertiserPage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "data":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/Advertiser"
+        "next_cursor":
+          "type": "string"
+          "nullable": true
+      "required":
+        - "data"
+        - "next_cursor"
+    "Bidder":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "endpoint_url":
+          "type": "string"
+          "format": "uri"
+          "pattern": "^https?://"
+        "timeout_ms":
+          "type": "integer"
+          "minimum": 10
+          "maximum": 1000
+          "nullable": true
+        "enabled":
+          "type": "boolean"
+          "default": true
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+      "required":
+        - "id"
+        - "name"
+        - "endpoint_url"
+        - "timeout_ms"
+        - "enabled"
+        - "created_at"
+        - "updated_at"
+    "BidderPage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "data":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/Bidder"
+        "next_cursor":
+          "type": "string"
+          "nullable": true
+      "required":
+        - "data"
+        - "next_cursor"
+    "BudgetView":
+      "type": "object"
+      "additionalProperties": false
+      "required":
+        - "campaign_id"
+        - "date"
+        - "daily_budget"
+        - "daily_budget_micros"
+        - "spent"
+        - "spent_micros"
+        - "remaining"
+        - "remaining_micros"
+      "properties":
+        "campaign_id":
+          "type": "string"
+          "format": "uuid"
+        "date":
+          "type": "string"
+          "example": "2026-11-18"
+        "daily_budget":
+          "type": "number"
+          "example": 0.01
+        "daily_budget_micros":
+          "type": "integer"
+          "format": "int64"
+          "example": 10000
+        "spent":
+          "type": "number"
+          "example": 0.00909
+        "spent_micros":
+          "type": "integer"
+          "format": "int64"
+          "example": 9090
+        "remaining":
+          "type": "number"
+          "example": 0.00091
+        "remaining_micros":
+          "type": "integer"
+          "format": "int64"
+          "example": 910
+    "Campaign":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "advertiser_id":
+          "type": "string"
+          "format": "uuid"
+        "bidder_id":
+          "type": "string"
+          "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "status":
+          "type": "string"
+          "enum":
+            - "draft"
+            - "active"
+            - "paused"
+            - "archived"
+        "daily_budget":
+          "type": "number"
+        "max_bid_cpm":
+          "type": "number"
+        "pacing_mode":
+          "type": "string"
+          "enum":
+            - "asap"
+            - "even"
+          "default": "even"
+        "start_at":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "end_at":
+          "type": "string"
+          "format": "date-time"
+          "nullable": true
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+      "required":
+        - "id"
+        - "advertiser_id"
+        - "bidder_id"
+        - "name"
+        - "status"
+        - "daily_budget"
+        - "max_bid_cpm"
+        - "pacing_mode"
+        - "start_at"
+        - "end_at"
+        - "created_at"
+        - "updated_at"
+    "CampaignPage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "data":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/Campaign"
+        "next_cursor":
+          "type": "string"
+          "nullable": true
+      "required":
+        - "data"
+        - "next_cursor"
+    "Creative":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "id":
+          "type": "string"
+          "format": "uuid"
+        "name":
+          "type": "string"
+          "minLength": 1
+          "maxLength": 200
+        "format":
+          "type": "string"
+          "enum":
+            - "banner"
+            - "native"
+            - "video"
+        "width":
+          "type": "integer"
+          "minimum": 1
+          "nullable": true
+        "height":
+          "type": "integer"
+          "minimum": 1
+          "nullable": true
+        "markup":
+          "type": "string"
+          "minLength": 1
+          "description": "At most 65536 UTF-8 bytes."
+        "landing_url":
+          "type": "string"
+          "format": "uri"
+          "pattern": "^https?://"
+        "status":
+          "type": "string"
+          "enum":
+            - "active"
+            - "paused"
+          "default": "active"
+        "campaign_id":
+          "type": "string"
+          "format": "uuid"
+        "created_at":
+          "type": "string"
+          "format": "date-time"
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+      "required":
+        - "id"
+        - "name"
+        - "format"
+        - "width"
+        - "height"
+        - "markup"
+        - "landing_url"
+        - "status"
+        - "campaign_id"
+        - "created_at"
+        - "updated_at"
+    "CreativePage":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "data":
+          "type": "array"
+          "items":
+            "$ref": "#/components/schemas/Creative"
+        "next_cursor":
+          "type": "string"
+          "nullable": true
+      "required":
+        - "data"
+        - "next_cursor"
+    "Targeting":
+      "type": "object"
+      "additionalProperties": false
+      "properties":
+        "campaign_id":
+          "type": "string"
+          "format": "uuid"
+        "countries":
+          "type": "array"
+          "items":
+            "type": "string"
+            "pattern": "^[A-Za-z]{2}$"
+          "default": []
+          "description": "ISO alpha-2 codes, normalized to uppercase and deduplicated."
+        "device_types":
+          "type": "array"
+          "items":
+            "type": "string"
+            "enum":
+              - "mobile"
+              - "desktop"
+              - "tablet"
+              - "ctv"
+          "default": []
+        "placement_ids":
+          "type": "array"
+          "items":
+            "type": "string"
+            "minLength": 1
+          "default": []
+        "hours_of_day":
+          "type": "array"
+          "items":
+            "type": "integer"
+            "minimum": 0
+            "maximum": 23
+          "default": []
+          "description": "Sorted and deduplicated."
+        "timezone":
+          "type": "string"
+          "default": "UTC"
+          "description": "IANA timezone; Local is not accepted."
+        "updated_at":
+          "type": "string"
+          "format": "date-time"
+      "required":
+        - "campaign_id"
+        - "countries"
+        - "device_types"
+        - "placement_ids"
+        - "hours_of_day"
+        - "timezone"
+        - "updated_at"

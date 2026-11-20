@@ -1,0 +1,302 @@
+name: pulsebid
+
+services:
+  campaign-service:
+    profiles: ["apps"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: campaign-service
+    environment:
+      SERVICE_NAME: campaign-service
+      HTTP_ADDR: ":8081"
+      GRPC_ADDR: ":8082"
+      ADMIN_ADDR: ":8091"
+      DATABASE_URL: postgres://pulsebid:pulsebid@postgres:5432/pulsebid?sslmode=disable
+      API_KEYS: "${API_KEYS:-dev-key}"
+      REDIS_ADDR: redis:6379
+      ENABLE_TEST_ENDPOINTS: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:8082:8082"
+      - "127.0.0.1:8091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 25s
+
+  bid-gateway:
+    profiles: ["apps"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: bid-gateway
+    environment:
+      SERVICE_NAME: bid-gateway
+      HTTP_ADDR: ":8080"
+      ADMIN_ADDR: ":8090"
+      CAMPAIGN_GRPC_ADDR: campaign-service:8082
+      PUBLIC_BASE_URL: http://localhost:8080
+      ENABLE_TEST_ENDPOINTS: "true"
+      REDIS_ADDR: redis:6379
+      KAFKA_BROKERS: redpanda:29092
+      EVENT_TOKEN_SECRET: test-secret-key-for-pulsebid-events-token
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8090:8090"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bid-gateway.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.bid-gateway.entrypoints=web"
+      - "traefik.http.services.bid-gateway.loadbalancer.server.port=8080"
+    depends_on:
+      campaign-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 25s
+
+  event-aggregator:
+    profiles: ["apps"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: event-aggregator
+    environment:
+      SERVICE_NAME: event-aggregator
+      HTTP_ADDR: ":8083"
+      ADMIN_ADDR: ":8093"
+      DATABASE_URL: postgres://pulsebid:pulsebid@postgres:5432/pulsebid?sslmode=disable
+      KAFKA_BROKERS: redpanda:29092
+      KAFKA_TOPIC_EVENTS: pulsebid.events.v1
+      KAFKA_TOPIC_DLQ: pulsebid.events.dlq.v1
+      API_KEYS: "${API_KEYS:-dev-key}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - "127.0.0.1:8083:8083"
+      - "127.0.0.1:8093:8093"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 25s
+
+  mock-bidders:
+    profiles: ["apps"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: mock-bidder
+    command: ["--count", "8", "--base-port", "9101"]
+    environment:
+      SERVICE_NAME: mock-bidder
+      ADMIN_ADDR: ":8094"
+      BIDDER_COUNT: "8"
+      BIDDER_BASE_PORT: "9101"
+      NO_BID_RATE: "0"
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+    ports:
+      - "127.0.0.1:9101:9101"
+      - "127.0.0.1:9102:9102"
+      - "127.0.0.1:9103:9103"
+      - "127.0.0.1:9104:9104"
+      - "127.0.0.1:9105:9105"
+      - "127.0.0.1:9106:9106"
+      - "127.0.0.1:9107:9107"
+      - "127.0.0.1:9108:9108"
+      - "127.0.0.1:8094:8094"
+    healthcheck:
+      test: ["CMD", "/healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 25s
+
+  migrate:
+    profiles: ["tools"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: migrate
+    environment:
+      DATABASE_URL: postgres://pulsebid:pulsebid@postgres:5432/pulsebid?sslmode=disable
+    command: ["up"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16.8-alpine
+    environment:
+      POSTGRES_USER: pulsebid
+      POSTGRES_PASSWORD: pulsebid
+      POSTGRES_DB: pulsebid
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulsebid -d pulsebid"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.2-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v25.1.2
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=internal://0.0.0.0:29092,external://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://redpanda:29092,external://localhost:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+    ports:
+      - "127.0.0.1:9092:9092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.6.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  jaeger:
+    build:
+      context: .
+      dockerfile: jaeger.Dockerfile
+    image: pulsebid/jaeger:1.67.0-local
+    pull_policy: build
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+    ports:
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:4317:4317"
+    volumes:
+      - jaeger-data:/badger
+    healthcheck:
+      test: ["CMD", "/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:14269/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  traefik:
+    image: traefik:v3.3.6
+    profiles: ["scale"]
+    command: ["--configFile=/etc/traefik/traefik.yml"]
+    ports:
+      - "127.0.0.1:8088:8088"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  redpanda-data:
+  prometheus-data:
+  grafana-data:
+  jaeger-data:

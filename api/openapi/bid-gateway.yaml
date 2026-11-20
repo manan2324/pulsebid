@@ -1,0 +1,406 @@
+openapi: 3.0.3
+info:
+  title: PulseBid Bid Gateway API
+  description: Public RTB auction gateway for submitting impression bid requests.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local gateway service
+paths:
+  /v1/bid:
+    post:
+      summary: Submit a real-time bid request
+      description: |
+        Evaluates active campaigns against targeting rules, fans out to demand partners,
+        executes a second-price auction, and returns the winning creative or 204 No Content.
+      operationId: submitBid
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Client-supplied request correlation ID.
+        - name: X-PulseBid-Test-Time
+          in: header
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: RFC 3339 timestamp overriding current time when ENABLE_TEST_ENDPOINTS is true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BidRequest'
+      responses:
+        '200':
+          description: Auction filled with winning ad creative.
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              description: Request correlation ID.
+            Server-Timing:
+              schema:
+                type: string
+              description: Performance metrics (e.g. total;dur=12.4).
+            X-PulseBid-Debug:
+              schema:
+                type: string
+              description: Diagnostic execution counts when ENABLE_TEST_ENDPOINTS is true.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BidResponse'
+        '204':
+          description: No fill (no eligible campaign, no valid bids, below floor, or budget blocked).
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+            Server-Timing:
+              schema:
+                type: string
+            X-PulseBid-Reason:
+              schema:
+                type: string
+                enum: [no_eligible, no_bids, below_floor, budget, error]
+              description: Reason the impression was not filled.
+            X-PulseBid-Debug:
+              schema:
+                type: string
+        '400':
+          description: Validation error or malformed JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds size limit (REQUEST_MAX_BYTES).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: Unsupported Content-Type (must be application/json).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/events/impression:
+    get:
+      summary: Track ad impression
+      description: Validates HMAC-SHA256 signed event token, publishes impression event to Kafka, and returns 1x1 transparent GIF.
+      operationId: trackImpression
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Base64URL signed token from bid response impression_url.
+        - name: X-PulseBid-Test-Time
+          in: header
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: RFC 3339 timestamp override for token expiration testing.
+      responses:
+        '200':
+          description: Transparent 1x1 GIF tracking pixel.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Invalid event token signature or format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Event token has expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Publisher queue full or Kafka broker unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/events/click:
+    get:
+      summary: Track ad click and redirect
+      description: Validates HMAC-SHA256 signed event token, publishes click event to Kafka, and redirects (302 Found) to destination landing URL.
+      operationId: trackClick
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Base64URL signed token from bid response click_url.
+        - name: X-PulseBid-Test-Time
+          in: header
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: RFC 3339 timestamp override for token expiration testing.
+      responses:
+        '302':
+          description: HTTP redirect to advertiser destination landing URL.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+                example: https://example.com/landing
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+        '400':
+          description: Invalid event token signature or format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '410':
+          description: Event token has expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Publisher queue full or Kafka broker unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    BidRequest:
+      type: object
+      required:
+        - id
+        - imp
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: req-123
+        imp:
+          $ref: '#/components/schemas/Impression'
+        device:
+          $ref: '#/components/schemas/Device'
+        geo:
+          $ref: '#/components/schemas/Geo'
+        site:
+          $ref: '#/components/schemas/Site'
+        user:
+          $ref: '#/components/schemas/User'
+        tmax:
+          type: integer
+          minimum: 10
+          maximum: 1000
+          example: 100
+          description: Timeout deadline in milliseconds.
+
+    Impression:
+      type: object
+      required:
+        - id
+        - placement_id
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: imp-1
+        placement_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: home-top-banner
+        w:
+          type: integer
+          minimum: 1
+          example: 300
+        h:
+          type: integer
+          minimum: 1
+          example: 250
+        bidfloor:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1000
+          example: 0.50
+        bidfloorcur:
+          type: string
+          default: USD
+          enum: [USD]
+          example: USD
+
+    Device:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [mobile, desktop, tablet, ctv]
+          example: mobile
+        os:
+          type: string
+          example: android
+        ua:
+          type: string
+          example: Mozilla/5.0 ...
+
+    Geo:
+      type: object
+      properties:
+        country:
+          type: string
+          pattern: '^[A-Za-z]{2}$'
+          example: IN
+        region:
+          type: string
+          example: GJ
+        city:
+          type: string
+          example: Ahmedabad
+
+    Site:
+      type: object
+      properties:
+        id:
+          type: string
+          example: pub-42
+        domain:
+          type: string
+          example: example.com
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          example: u-789
+
+    BidResponse:
+      type: object
+      required:
+        - request_id
+        - bid_id
+        - campaign_id
+        - creative_id
+        - advertiser_id
+        - bidder_id
+        - price
+        - currency
+        - adm
+        - impression_url
+        - click_url
+        - w
+        - h
+      properties:
+        request_id:
+          type: string
+          example: req-123
+        bid_id:
+          type: string
+          format: uuid
+          example: 0193f0a2-0000-7000-8000-000000000001
+        campaign_id:
+          type: string
+          format: uuid
+        creative_id:
+          type: string
+          format: uuid
+        advertiser_id:
+          type: string
+          format: uuid
+        bidder_id:
+          type: string
+          example: bidder-1
+        price:
+          type: number
+          format: double
+          example: 1.51
+          description: Clearing CPM in USD.
+        currency:
+          type: string
+          example: USD
+        adm:
+          type: string
+          description: Creative markup with tracking placeholders substituted.
+        impression_url:
+          type: string
+          format: uri
+        click_url:
+          type: string
+          format: uri
+        w:
+          type: integer
+          example: 300
+        h:
+          type: integer
+          example: 250
+
+    ErrorDetail:
+      type: object
+      required:
+        - field
+        - issue
+      properties:
+        field:
+          type: string
+        issue:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - request_id
+          properties:
+            code:
+              type: string
+              example: invalid_request
+            message:
+              type: string
+              example: request validation failed
+            request_id:
+              type: string
+            details:
+              type: array
+              items:
+                $ref: '#/components/schemas/ErrorDetail'
