@@ -1,6 +1,7 @@
 package reporting
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +24,7 @@ func TestHandler_Auth(t *testing.T) {
 	mux := http.NewServeMux()
 	RegisterRoutes(mux, svc, []string{"secret-key"})
 
-	req := httptest.NewRequest("GET", "/v1/reports/campaigns?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/reports/campaigns?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z", nil)
 
 	// Missing auth header -> 401
 	w := httptest.NewRecorder()
@@ -51,7 +52,7 @@ func TestHandler_CampaignReports_Validation(t *testing.T) {
 	RegisterRoutes(mux, svc, []string{"dev-key"})
 
 	doGet := func(target string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest("GET", target, nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", target, nil)
 		req.Header.Set("X-API-Key", "dev-key")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -110,7 +111,7 @@ func TestHandler_SingleCampaignReport(t *testing.T) {
 	RegisterRoutes(mux, svc, []string{"dev-key"})
 
 	t.Run("invalid UUID in path", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/v1/reports/campaigns/not-a-uuid?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/reports/campaigns/not-a-uuid?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z", nil)
 		req.Header.Set("X-API-Key", "dev-key")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -123,7 +124,7 @@ func TestHandler_SingleCampaignReport(t *testing.T) {
 			return len(p.CampaignIDs) == 1 && p.CampaignIDs[0] == unknownID
 		})).Return([]RawStatsRow{}, nil)
 
-		req := httptest.NewRequest("GET", "/v1/reports/campaigns/"+unknownID.String()+"?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/reports/campaigns/"+unknownID.String()+"?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z", nil)
 		req.Header.Set("X-API-Key", "dev-key")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -162,7 +163,7 @@ func TestHandler_GoldenJSONResponses(t *testing.T) {
 			},
 		}, nil).Once()
 
-		req := httptest.NewRequest("GET", "/v1/reports/campaigns?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z&granularity=hour", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/reports/campaigns?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z&granularity=hour", nil)
 		req.Header.Set("X-API-Key", "dev-key")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)
@@ -214,7 +215,7 @@ func TestHandler_GoldenJSONResponses(t *testing.T) {
 			},
 		}, nil).Once()
 
-		req := httptest.NewRequest("GET", "/v1/reports/campaigns?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z&granularity=total", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/reports/campaigns?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z&granularity=total", nil)
 		req.Header.Set("X-API-Key", "dev-key")
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, req)

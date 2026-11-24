@@ -152,6 +152,18 @@ services:
       postgres:
         condition: service_healthy
 
+  seed:
+    profiles: ["tools"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        SERVICE: seed
+    environment:
+      RUN_SEED: "1"
+      CAMPAIGN_URL: http://campaign-service:8081
+      BIDDER_HOST: http://mock-bidders
+      API_KEY: "${API_KEYS:-dev-key}"
   postgres:
     image: postgres:16.8-alpine
     environment:
@@ -278,7 +290,7 @@ services:
     restart: unless-stopped
 
   traefik:
-    image: traefik:v3.3.6
+    image: traefik:v3.6.16
     profiles: ["scale"]
     command: ["--configFile=/etc/traefik/traefik.yml"]
     ports:

@@ -115,9 +115,10 @@ func Run(ctx context.Context, common config.Common, cfg Config, out io.Writer) (
 		return err
 	}
 	rdb := redis.NewClient(&redis.Options{
-		Addr: cfg.RedisAddr,
+		ContextTimeoutEnabled: true,
+		Addr:                  cfg.RedisAddr,
 	})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	_ = m.RegisterRedis(rdb)
 	budgetReserver := budget.NewRedisReserver(rdb, 100*time.Millisecond, 0.05, nil)
 

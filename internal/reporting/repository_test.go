@@ -3,6 +3,7 @@ package reporting
 import (
 	"context"
 	"os"
+	"pulsebid/internal/platform/testutil"
 	"testing"
 	"time"
 
@@ -21,18 +22,18 @@ func getTestDatabaseURL() string {
 
 func setupTestDB(t *testing.T) (*pgxpool.Pool, *PostgresRepository) {
 	ctx := context.Background()
-	dsn := getTestDatabaseURL()
+	dsn := testutil.DatabaseURL(t, getTestDatabaseURL())
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
-		t.Skipf("cannot parse db dsn %s: %v", dsn, err)
+		testutil.Unavailable(t, "cannot parse db dsn %s: %v", dsn, err)
 	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		t.Skipf("cannot connect to db: %v", err)
+		testutil.Unavailable(t, "cannot connect to db: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
-		t.Skipf("cannot ping db: %v", err)
+		testutil.Unavailable(t, "cannot ping db: %v", err)
 	}
 	t.Cleanup(func() {
 		pool.Close()

@@ -18,7 +18,10 @@ func TestRedisReserver_ConcurrencyOverspendProof(t *testing.T) {
 	// Simulate 3 gateway instances with distinct reserver instances connected to the same Redis
 	gateways := make([]*RedisReserver, 3)
 	for i := 0; i < 3; i++ {
-		gateways[i] = NewRedisReserver(client, 500*time.Millisecond, 0.05, nil)
+		// This test proves atomic cap math under 600 racing callers. Give the
+		// instrumented integration run time to schedule them; timeout behavior
+		// is checked separately by TestRedisOperationsHaveOwnDeadline.
+		gateways[i] = NewRedisReserver(client, 2*time.Second, 0.05, nil)
 	}
 
 	campID := fmt.Sprintf("camp-concurrent-%d", time.Now().UnixNano())
@@ -53,11 +56,11 @@ func TestRedisReserver_ConcurrencyOverspendProof(t *testing.T) {
 
 	for gwIdx, gw := range gateways {
 		for i := 0; i < goroutinesPerGateway; i++ {
-			go func(reserver *RedisReserver, id int) {
+			go func(reserver *RedisReserver, _ int) {
 				defer wg.Done()
 				<-startCh // wait for release of starting gate
 
-				resCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				resCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 
 				res, err := reserver.Reserve(resCtx, camp, costMicros, now)

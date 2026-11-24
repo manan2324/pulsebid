@@ -25,7 +25,7 @@ type capturingEventPublisher struct {
 	publishError error
 }
 
-func (c *capturingEventPublisher) Publish(ctx context.Context, ev *events.Event) error {
+func (c *capturingEventPublisher) Publish(_ context.Context, ev *events.Event) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.publishError != nil {
@@ -35,7 +35,7 @@ func (c *capturingEventPublisher) Publish(ctx context.Context, ev *events.Event)
 	return nil
 }
 
-func (c *capturingEventPublisher) TryPublishAsync(ev *events.Event) bool {
+func (c *capturingEventPublisher) TryPublishAsync(_ context.Context, ev *events.Event) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.published = append(c.published, ev)
@@ -45,7 +45,7 @@ func (c *capturingEventPublisher) TryPublishAsync(ev *events.Event) bool {
 func (c *capturingEventPublisher) Flush(context.Context) error { return nil }
 func (c *capturingEventPublisher) Close() error                { return nil }
 
-func setupEventsGateway(t *testing.T, pub EventPublisher, enableTest bool) *Handler {
+func setupEventsGateway(_ *testing.T, pub EventPublisher, enableTest bool) *Handler {
 	cfg := Config{
 		HTTPAddr:            ":8080",
 		PublicBaseURL:       "http://localhost:8080",
@@ -85,13 +85,13 @@ func TestEvents_Impression_Success(t *testing.T) {
 	tok, err := token.Sign([]byte(h.cfg.EventTokenSecret), payload)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/v1/events/impression?t="+tok, nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t="+tok, nil)
 	rec := httptest.NewRecorder()
 
 	h.HandleImpression(rec, req)
 
 	res := rec.Result()
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Equal(t, "image/gif", res.Header.Get("Content-Type"))
@@ -128,13 +128,13 @@ func TestEvents_Click_Success(t *testing.T) {
 	tok, err := token.Sign([]byte(h.cfg.EventTokenSecret), payload)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/v1/events/click?t="+tok, nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/click?t="+tok, nil)
 	rec := httptest.NewRecorder()
 
 	h.HandleClick(rec, req)
 
 	res := rec.Result()
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	assert.Equal(t, http.StatusFound, res.StatusCode)
 	assert.Equal(t, "https://example.com/clicked-landing", res.Header.Get("Location"))
@@ -152,14 +152,14 @@ func TestEvents_MissingToken(t *testing.T) {
 	h := setupEventsGateway(t, &capturingEventPublisher{}, true)
 
 	// Impression without token
-	req := httptest.NewRequest("GET", "/v1/events/impression", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression", nil)
 	rec := httptest.NewRecorder()
 	h.HandleImpression(rec, req)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "invalid_token")
 
 	// Click without token
-	req2 := httptest.NewRequest("GET", "/v1/events/click", nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/click", nil)
 	rec2 := httptest.NewRecorder()
 	h.HandleClick(rec2, req2)
 	assert.Equal(t, http.StatusBadRequest, rec2.Code)
@@ -169,7 +169,7 @@ func TestEvents_MissingToken(t *testing.T) {
 func TestEvents_TamperedToken(t *testing.T) {
 	h := setupEventsGateway(t, &capturingEventPublisher{}, true)
 
-	req := httptest.NewRequest("GET", "/v1/events/impression?t=tampered-garbage-token", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t=tampered-garbage-token", nil)
 	rec := httptest.NewRecorder()
 	h.HandleImpression(rec, req)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
@@ -181,12 +181,12 @@ func TestEvents_ExpiredToken(t *testing.T) {
 
 	issuedAt := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
 	payload := token.Payload{
-		BidID:        "0193f0a2-1234-7000-8000-000000000003",
-		RequestID:    "req-exp",
-		CampaignID:   "camp-1",
-		LandingURL:   "https://example.com",
-		IssuedAt:     issuedAt.Unix(),
-		ExpiresAt:    issuedAt.Add(24 * time.Hour).Unix(),
+		BidID:      "0193f0a2-1234-7000-8000-000000000003",
+		RequestID:  "req-exp",
+		CampaignID: "camp-1",
+		LandingURL: "https://example.com",
+		IssuedAt:   issuedAt.Unix(),
+		ExpiresAt:  issuedAt.Add(24 * time.Hour).Unix(),
 	}
 
 	tok, err := token.Sign([]byte(h.cfg.EventTokenSecret), payload)
@@ -194,7 +194,7 @@ func TestEvents_ExpiredToken(t *testing.T) {
 
 	// In test mode, send X-PulseBid-Test-Time 48h in future
 	futureTime := issuedAt.Add(48 * time.Hour).Format(time.RFC3339)
-	req := httptest.NewRequest("GET", "/v1/events/impression?t="+tok, nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t="+tok, nil)
 	req.Header.Set("X-PulseBid-Test-Time", futureTime)
 	rec := httptest.NewRecorder()
 
@@ -203,7 +203,7 @@ func TestEvents_ExpiredToken(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "token_expired")
 
 	// Same for click
-	req2 := httptest.NewRequest("GET", "/v1/events/click?t="+tok, nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/click?t="+tok, nil)
 	req2.Header.Set("X-PulseBid-Test-Time", futureTime)
 	rec2 := httptest.NewRecorder()
 
@@ -220,18 +220,18 @@ func TestEvents_PublisherFails_503(t *testing.T) {
 
 	now := time.Now().UTC()
 	payload := token.Payload{
-		BidID:        "0193f0a2-1234-7000-8000-000000000004",
-		RequestID:    "req-down",
-		CampaignID:   "camp-1",
-		LandingURL:   "https://example.com",
-		IssuedAt:     now.Unix(),
-		ExpiresAt:    now.Add(24 * time.Hour).Unix(),
+		BidID:      "0193f0a2-1234-7000-8000-000000000004",
+		RequestID:  "req-down",
+		CampaignID: "camp-1",
+		LandingURL: "https://example.com",
+		IssuedAt:   now.Unix(),
+		ExpiresAt:  now.Add(24 * time.Hour).Unix(),
 	}
 
 	tok, err := token.Sign([]byte(h.cfg.EventTokenSecret), payload)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest("GET", "/v1/events/impression?t="+tok, nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t="+tok, nil)
 	rec := httptest.NewRecorder()
 	h.HandleImpression(rec, req)
 	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
@@ -244,26 +244,26 @@ func TestEvents_DuplicateImpressionProducesIdenticalEventID(t *testing.T) {
 
 	now := time.Now().UTC()
 	payload := token.Payload{
-		BidID:        "0193f0a2-1234-7000-8000-000000000005",
-		RequestID:    "req-dup",
-		CampaignID:   "camp-1",
-		LandingURL:   "https://example.com",
-		PriceMicros:  1200,
-		IssuedAt:     now.Unix(),
-		ExpiresAt:    now.Add(24 * time.Hour).Unix(),
+		BidID:       "0193f0a2-1234-7000-8000-000000000005",
+		RequestID:   "req-dup",
+		CampaignID:  "camp-1",
+		LandingURL:  "https://example.com",
+		PriceMicros: 1200,
+		IssuedAt:    now.Unix(),
+		ExpiresAt:   now.Add(24 * time.Hour).Unix(),
 	}
 
 	tok, err := token.Sign([]byte(h.cfg.EventTokenSecret), payload)
 	require.NoError(t, err)
 
 	// Fire 1st impression
-	req1 := httptest.NewRequest("GET", "/v1/events/impression?t="+tok, nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t="+tok, nil)
 	rec1 := httptest.NewRecorder()
 	h.HandleImpression(rec1, req1)
 	require.Equal(t, http.StatusOK, rec1.Code)
 
 	// Fire 2nd impression
-	req2 := httptest.NewRequest("GET", "/v1/events/impression?t="+tok, nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t="+tok, nil)
 	rec2 := httptest.NewRecorder()
 	h.HandleImpression(rec2, req2)
 	require.Equal(t, http.StatusOK, rec2.Code)

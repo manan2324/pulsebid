@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-
-RATE="${1:-${RATE:-5000}}"
-DURATION="${2:-${DURATION:-2m}}"
-GATEWAY="${GATEWAY:-http://bid-gateway:8080}"
-REPORT_DIR="docs/test-reports/$(date +%F)/phase-12"
-mkdir -p "$REPORT_DIR"
-
-echo "Executing k6 constant-arrival-rate test: RATE=${RATE} rps, DURATION=${DURATION} against ${GATEWAY}..."
-
-host_root=$PWD
-if command -v cygpath >/dev/null; then host_root=$(cygpath -m "$PWD"); fi
-
-MSYS_NO_PATHCONV=1 docker run --rm -i --network pulsebid_default \
-  -v "${host_root}/loadtest/k6:/scripts" \
-  -e "GATEWAY=${GATEWAY}" \
-  -e "RATE=${RATE}" \
-  -e "DURATION=${DURATION}" \
-  grafana/k6:latest run /scripts/bid.js | tee "${REPORT_DIR}/k6-rate-${RATE}.txt"
+rate="${1:-${RATE:-5000}}"
+duration="${2:-${DURATION:-2m}}"
+report="${REPORT_DIR:-docs/test-reports/$(date +%F)/verification}"
+mkdir -p "$report"
+gateway="${GATEWAY:-http://127.0.0.1:8080}"
+if [[ -n ${K6_BIN:-} ]]; then
+  runner=("$K6_BIN")
+elif command -v k6 >/dev/null; then
+  runner=(k6)
+elif [[ -x loadtest/k6/k6 ]]; then
+  runner=(./loadtest/k6/k6)
+elif [[ -f loadtest/k6/k6.exe ]]; then
+  runner=(./loadtest/k6/k6.exe)
+else
+  root=$PWD
+  if command -v cygpath >/dev/null; then root=$(cygpath -m "$PWD"); fi
+  runner=(docker run --rm --network host --mount "type=bind,source=$root,target=/work" --workdir /work grafana/k6:latest)
+fi
+"${runner[@]}" run --summary-export "$report/k6-${rate}rps.json" \
+  -e "GATEWAY=$gateway" -e "RATE=$rate" -e "DURATION=$duration" \
+  -e "PRE_VUS=${PRE_VUS:-500}" -e "MAX_VUS=${MAX_VUS:-1000}" \
+  loadtest/k6/bid.js 2>&1 | tee "$report/k6-${rate}rps.txt"

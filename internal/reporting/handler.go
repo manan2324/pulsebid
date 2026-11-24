@@ -1,3 +1,4 @@
+// Package reporting serves validated campaign performance reports.
 package reporting
 
 import (

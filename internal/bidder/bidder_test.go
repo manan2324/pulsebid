@@ -31,7 +31,7 @@ func TestConfigValidation(t *testing.T) {
 		mutate  func(*bidder.Config)
 		wantErr bool
 	}{
-		{"valid defaults", func(c *bidder.Config) {}, false},
+		{"valid defaults", func(_ *bidder.Config) {}, false},
 		{"negative latency", func(c *bidder.Config) { c.LatencyMS = -1 }, true},
 		{"negative jitter", func(c *bidder.Config) { c.JitterMS = -1 }, true},
 		{"error rate > 1", func(c *bidder.Config) { c.ErrorRate = 1.1 }, true},
@@ -122,7 +122,7 @@ func TestBidder_FixedMode(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -172,7 +172,7 @@ func TestBidder_ShadeMode(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -217,14 +217,14 @@ func TestBidder_RandomModeDeterminism(t *testing.T) {
 
 	// Make 2 identical requests
 	raw, _ := json.Marshal(reqBody)
-	req1 := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec1 := httptest.NewRecorder()
 	handler.ServeHTTP(rec1, req1)
 
 	var b1 bidder.BidResponse
 	_ = json.Unmarshal(rec1.Body.Bytes(), &b1)
 
-	req2 := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
 
@@ -248,7 +248,7 @@ func TestBidder_RandomModeDeterminism(t *testing.T) {
 	// Change request ID -> price should differ
 	reqBody.RequestID = "different-req-456"
 	rawDiff, _ := json.Marshal(reqBody)
-	req3 := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(rawDiff))
+	req3 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(rawDiff))
 	rec3 := httptest.NewRecorder()
 	handler.ServeHTTP(rec3, req3)
 
@@ -283,7 +283,7 @@ func TestBidder_FloorFilterNoFill(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -308,7 +308,7 @@ func TestBidder_EmptyCandidates(t *testing.T) {
 	}
 
 	raw, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -323,7 +323,7 @@ func TestBidder_MalformedJSON(t *testing.T) {
 	s := newTestServer(t, cfg)
 	handler := s.Handler()
 
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader([]byte(`{"request_id":`)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader([]byte(`{"request_id":`)))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -339,7 +339,7 @@ func TestBidder_AdminConfigCRUD(t *testing.T) {
 	handler := s.Handler()
 
 	// 1. GET /admin/config
-	req1 := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/admin/config", nil)
 	rec1 := httptest.NewRecorder()
 	handler.ServeHTTP(rec1, req1)
 
@@ -363,7 +363,7 @@ func TestBidder_AdminConfigCRUD(t *testing.T) {
 		BidMode:   &newMode,
 	}
 	patchRaw, _ := json.Marshal(patch)
-	req2 := httptest.NewRequest(http.MethodPost, "/admin/config", bytes.NewReader(patchRaw))
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/config", bytes.NewReader(patchRaw))
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
 
@@ -386,7 +386,7 @@ func TestBidder_AdminConfigCRUD(t *testing.T) {
 	badRate := 2.5
 	badPatch := bidder.ConfigPatch{ErrorRate: &badRate}
 	badRaw, _ := json.Marshal(badPatch)
-	req3 := httptest.NewRequest(http.MethodPost, "/admin/config", bytes.NewReader(badRaw))
+	req3 := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/config", bytes.NewReader(badRaw))
 	rec3 := httptest.NewRecorder()
 	handler.ServeHTTP(rec3, req3)
 
@@ -412,7 +412,7 @@ func TestBidder_ErrorRateBehavior(t *testing.T) {
 		},
 	}
 	raw, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -438,7 +438,7 @@ func TestBidder_NoBidRateBehavior(t *testing.T) {
 		},
 	}
 	raw, _ := json.Marshal(reqBody)
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -460,7 +460,7 @@ func TestBidder_TimeoutRateBehavior(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader([]byte(`{"candidates":[{"campaign_id":"c1","creative_id":"cr1","max_bid_cpm":1.0}]}`)))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader([]byte(`{"candidates":[{"campaign_id":"c1","creative_id":"cr1","max_bid_cpm":1.0}]}`)))
 	req = req.WithContext(ctx)
 	rec := httptest.NewRecorder()
 
@@ -480,7 +480,7 @@ func TestBidder_HealthzAndReadyz(t *testing.T) {
 	handler := s.Handler()
 
 	// /healthz
-	req1 := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	rec1 := httptest.NewRecorder()
 	handler.ServeHTTP(rec1, req1)
 	if rec1.Code != http.StatusOK {
@@ -488,7 +488,7 @@ func TestBidder_HealthzAndReadyz(t *testing.T) {
 	}
 
 	// /readyz
-	req2 := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
 	if rec2.Code != http.StatusOK {
@@ -497,7 +497,7 @@ func TestBidder_HealthzAndReadyz(t *testing.T) {
 
 	// drain
 	s.SetDraining(true)
-	req3 := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req3 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/readyz", nil)
 	rec3 := httptest.NewRecorder()
 	handler.ServeHTTP(rec3, req3)
 	if rec3.Code != http.StatusServiceUnavailable {
@@ -505,7 +505,7 @@ func TestBidder_HealthzAndReadyz(t *testing.T) {
 	}
 
 	// /metrics
-	req4 := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req4 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/metrics", nil)
 	rec4 := httptest.NewRecorder()
 	handler.ServeHTTP(rec4, req4)
 	if rec4.Code != http.StatusOK {
@@ -531,7 +531,7 @@ func TestBidder_ConcurrentRequestsAndUpdates(t *testing.T) {
 	// 50 concurrent bid requests
 	for i := 0; i < 50; i++ {
 		wg.Add(1)
-		go func(idx int) {
+		go func(_ int) {
 			defer wg.Done()
 			reqBody := bidder.BidRequest{
 				RequestID: "req-conc",
@@ -540,7 +540,7 @@ func TestBidder_ConcurrentRequestsAndUpdates(t *testing.T) {
 				},
 			}
 			raw, _ := json.Marshal(reqBody)
-			req := httptest.NewRequest(http.MethodPost, "/bid", bytes.NewReader(raw))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/bid", bytes.NewReader(raw))
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK && rec.Code != http.StatusNoContent {
@@ -560,7 +560,7 @@ func TestBidder_ConcurrentRequestsAndUpdates(t *testing.T) {
 			}
 			patch := bidder.ConfigPatch{BidMode: &mode}
 			raw, _ := json.Marshal(patch)
-			req := httptest.NewRequest(http.MethodPost, "/admin/config", bytes.NewReader(raw))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/config", bytes.NewReader(raw))
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 		}(i)

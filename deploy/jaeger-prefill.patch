@@ -1,0 +1,34 @@
+--- a/internal/storage/v1/badger/spanstore/reader.go
++++ b/internal/storage/v1/badger/spanstore/reader.go
+@@ -576,8 +576,10 @@
+ // preloadServices fills the cache with services after extracting from badger
+ func (r *TraceReader) preloadServices() []string {
+ 	var services []string
++	expirations := make(map[string]uint64)
+ 	r.store.View(func(txn *badger.Txn) error {
+ 		opts := badger.DefaultIteratorOptions
++		opts.PrefetchValues = false
+ 		it := txn.NewIterator(opts)
+ 		defer it.Close()
+ 
+@@ -588,10 +590,18 @@
+ 			timestampStartIndex := len(it.Item().Key()) - (sizeOfTraceID + 8) // 8 = sizeof(uint64)
+ 			serviceName := string(it.Item().Key()[len(serviceKey):timestampStartIndex])
+ 			keyTTL := it.Item().ExpiresAt()
+-			services = append(services, serviceName)
+-			r.cache.AddService(serviceName, keyTTL)
++			previousTTL, exists := expirations[serviceName]
++			if !exists {
++				services = append(services, serviceName)
++				expirations[serviceName] = keyTTL
++			} else if previousTTL != 0 && (keyTTL == 0 || keyTTL > previousTTL) {
++				expirations[serviceName] = keyTTL
++			}
+ 		}
+ 		return nil
+ 	})
++	for service, expiresAt := range expirations {
++		r.cache.AddService(service, expiresAt)
++	}
+ 	return services
+ }

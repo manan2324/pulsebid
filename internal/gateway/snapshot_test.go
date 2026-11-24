@@ -27,7 +27,7 @@ type mockCatalogClient struct {
 	idx       int
 }
 
-func (m *mockCatalogClient) GetSnapshot(ctx context.Context, in *catalogv1.GetSnapshotRequest, opts ...grpc.CallOption) (*catalogv1.GetSnapshotResponse, error) {
+func (m *mockCatalogClient) GetSnapshot(_ context.Context, _ *catalogv1.GetSnapshotRequest, _ ...grpc.CallOption) (*catalogv1.GetSnapshotResponse, error) {
 	if m.idx < len(m.errors) && m.errors[m.idx] != nil {
 		err := m.errors[m.idx]
 		m.idx++
@@ -113,7 +113,7 @@ func TestStubsAndServerHelpers(t *testing.T) {
 	assert.Equal(t, int64(0), spent)
 
 	publisher := NoopEventPublisher{}
-	assert.NoError(t, publisher.PublishAuction(context.Background(), nil))
+	assert.True(t, publisher.TryPublishAsync(context.Background(), nil))
 	assert.NoError(t, publisher.Flush(context.Background()))
 	assert.NoError(t, publisher.Close())
 
@@ -129,7 +129,7 @@ func TestStubsAndServerHelpers(t *testing.T) {
 	require.NotNil(t, stacked)
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/healthz", nil)
 	stacked.ServeHTTP(rec, req)
 	// /healthz is on admin server, so on public API mux it returns 404
 	assert.Equal(t, http.StatusNotFound, rec.Code)

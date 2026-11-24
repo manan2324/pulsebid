@@ -19,10 +19,10 @@ func TestTargeting_EvaluateCampaign(t *testing.T) {
 	endAt := time.Date(2026, 11, 30, 0, 0, 0, 0, time.UTC)
 
 	baseCampaign := &catalogv1.Campaign{
-		Id:           "camp-1",
-		BidderId:     "bidder-1",
-		StartAt:      timestamppb.New(startAt),
-		EndAt:        timestamppb.New(endAt),
+		Id:              "camp-1",
+		BidderId:        "bidder-1",
+		StartAt:         timestamppb.New(startAt),
+		EndAt:           timestamppb.New(endAt),
 		MaxBidCpmMicros: 3_000_000,
 		Targeting: &catalogv1.Targeting{
 			Countries:    []string{"IN", "US"},
@@ -42,12 +42,12 @@ func TestTargeting_EvaluateCampaign(t *testing.T) {
 	validTime := time.Date(2026, 11, 15, 4, 0, 0, 0, time.UTC)
 
 	tests := []struct {
-		name       string
-		req        BidRequest
-		now        time.Time
-		isExh      func(string) bool
-		wantMatch  bool
-		wantCreat  string
+		name      string
+		req       BidRequest
+		now       time.Time
+		isExh     func(string) bool
+		wantMatch bool
+		wantCreat string
 	}{
 		{
 			name: "exact match on all targeting criteria",
@@ -261,7 +261,6 @@ func BenchmarkTargeting(b *testing.B) {
 	}
 	now := time.Now().UTC()
 
-	
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = GroupCandidates(campaigns, req, now, nil)

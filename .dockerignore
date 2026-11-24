@@ -7,3 +7,5 @@ bin
 docs/test-reports
 *.exe
 *.out
+scratch
+loadtest/k6/k6

@@ -210,8 +210,9 @@ func TestPostgresIntegration(t *testing.T) {
 		require.Equal(t, 415, w.Code)
 		bView := bodyAs[map[string]any](t, send(t, handler, "GET", "/v1/campaigns/"+campaign.ID+"/budget", "", 200))
 		require.Equal(t, campaign.ID, bView["campaign_id"])
-		require.Equal(t, float64(50.123456), bView["daily_budget"])
-		require.Equal(t, float64(50123456), bView["daily_budget_micros"])
+		// The CRUD subtest changed this campaign's daily budget to 0.01.
+		require.Equal(t, float64(0.01), bView["daily_budget"])
+		require.Equal(t, float64(10000), bView["daily_budget_micros"])
 		require.Equal(t, float64(0.001), bView["spent"])
 		require.Equal(t, float64(1000), bView["spent_micros"])
 		send(t, handler, "POST", "/v1/campaigns/"+campaign.ID+"/budget/reset", "", 200)

@@ -15,7 +15,7 @@ import (
 
 func TestServer_Healthz(t *testing.T) {
 	mux := NewServer(nil, nil)
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/healthz", nil)
 	w := httptest.NewRecorder()
 
 	mux.ServeHTTP(w, req)
@@ -33,7 +33,7 @@ func TestServer_Stack(t *testing.T) {
 	handler := Stack(mux, slog.Default(), m, provider)
 	require.NotNil(t, handler)
 
-	req := httptest.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/healthz", nil)
 	w := httptest.NewRecorder()
 
 	handler.ServeHTTP(w, req)

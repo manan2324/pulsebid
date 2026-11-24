@@ -16,7 +16,7 @@ coverage_budget
 coverage.*
 
 # Vendor / downloaded tools
-/loadtest/k6/
+/loadtest/k6/k6
 
 # Test reports (runtime artifacts; only keep the placeholder)
 /docs/test-reports/*

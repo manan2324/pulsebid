@@ -1,3 +1,4 @@
+// Package aggregator consumes exchange events into idempotent hourly rollups.
 package aggregator
 
 import (

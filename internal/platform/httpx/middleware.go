@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/felixge/httpsnoop"
@@ -91,6 +92,7 @@ func Recover(next http.Handler) http.Handler {
 
 // Logging injects the logger and records only route templates and safe metadata.
 func Logging(logger *slog.Logger) Middleware {
+	var warnings atomic.Uint64
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r = r.WithContext(logging.WithLogger(r.Context(), logger))
@@ -102,7 +104,9 @@ func Logging(logger *slog.Logger) Middleware {
 			durMS := float64(measured.Duration) / float64(time.Millisecond)
 			if route == "POST /v1/bid" || strings.HasSuffix(route, "/v1/bid") {
 				if measured.Code >= 400 || measured.Duration > 110*time.Millisecond {
-					logger.WarnContext(r.Context(), "HTTP request", "route", route, "status", measured.Code, "latency_ms", durMS)
+					if (warnings.Add(1)-1)%100 == 0 {
+						logger.WarnContext(r.Context(), "HTTP request", "route", route, "status", measured.Code, "latency_ms", durMS)
+					}
 				} else {
 					logger.DebugContext(r.Context(), "HTTP request", "route", route, "status", measured.Code, "latency_ms", durMS)
 				}

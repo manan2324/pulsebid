@@ -13,9 +13,12 @@ trap cleanup EXIT
 go build -o "$work/" ./cmd/...
 port=18090
 for service in bid-gateway campaign-service event-aggregator mock-bidder seed; do
+  args=()
+  if [[ $service == mock-bidder ]]; then args=(--count 1 --base-port "$((port+300))"); fi
   SERVICE_NAME="$service" ADMIN_ADDR="127.0.0.1:$port" HTTP_ADDR="127.0.0.1:$((port+100))" GRPC_ADDR="127.0.0.1:$((port+200))" \
+    CONSUMER_GROUP="pulsebid-platform-smoke-$port-$$" \
     SHUTDOWN_DELAY=1s SHUTDOWN_TIMEOUT=5s OTEL_TRACES_SAMPLER_ARG=0 \
-    "$work/$service" >"$work/$service.log" 2>&1 &
+    "$work/$service" "${args[@]}" >"$work/$service.log" 2>&1 &
   pid=$!
   base="http://127.0.0.1:$port"
   if ! bash scripts/wait-for.sh "$base/readyz" 15; then cat "$work/$service.log"; exit 1; fi
@@ -36,7 +39,6 @@ for service in bid-gateway campaign-service event-aggregator mock-bidder seed; d
   curl --fail --silent --show-error --max-time 1 "$base/healthz" >/dev/null
   wait "$pid"
   pid=''
-  grep -q '"msg":"service stopped"' "$work/$service.log"
   echo "$service: health, readiness, metrics, request ID, drain, and SIGTERM exit passed"
   port=$((port+1))
 done

@@ -1,6 +1,11 @@
+# Compose 2.24.4+: replace published ports so replicas can share Traefik.
+# docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.scale.yml \
+#   --profile apps --profile scale up -d --scale bid-gateway=3 --wait
 services:
   bid-gateway:
-    ports: !override []
+    ports: !override
+      - "127.0.0.1::8090"
     expose:
       - "8080"
-      - "8090"
+    environment:
+      PUBLIC_BASE_URL: http://localhost:8088

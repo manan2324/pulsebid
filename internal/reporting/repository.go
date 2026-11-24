@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// MaxRowLimit bounds the number of report rows materialized in memory.
 const MaxRowLimit = 50000
 
 // Repository defines the data access contract for reporting queries.

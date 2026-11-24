@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,7 @@ func TestBidRequest_ValidationTable(t *testing.T) {
 	}{
 		{
 			name:      "valid minimal request",
-			modify:    func(r *BidRequest) {},
+			modify:    func(_ *BidRequest) {},
 			wantError: false,
 		},
 		{
@@ -188,8 +189,8 @@ func FuzzDecodeAndValidateRequest(f *testing.F) {
 	f.Add([]byte(`not a json`))
 	f.Add([]byte(`{"id":"","imp":{"id":""}}`))
 
-	f.Fuzz(func(t *testing.T, data []byte) {
-		req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(string(data)))
+	f.Fuzz(func(_ *testing.T, data []byte) {
+		req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(string(data)))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 

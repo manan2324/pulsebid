@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -74,8 +73,7 @@ func TestConfig_Validation(t *testing.T) {
 }
 
 func TestConfig_LoadConfig(t *testing.T) {
-	os.Setenv("HTTP_ADDR", ":8888")
-	defer os.Unsetenv("HTTP_ADDR")
+	t.Setenv("HTTP_ADDR", ":8888")
 
 	cfg, err := LoadConfig()
 	require.NoError(t, err)

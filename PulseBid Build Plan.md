@@ -45,7 +45,7 @@ When the owner says **"work on the next phase"** (or "continue"):
 - [x] **Phase 9**: Reporting API
 - [x] **Phase 10**: Resilience hardening (breakers, bulkheads, failure drills)
 - [x] **Phase 11**: Observability (dashboards, trace polish, alerts)
-- [x] **Phase 12**: Performance, load proof, final Postman report and docs
+- [ ] **Phase 12**: Performance, load proof, final Postman report and docs (reopened by the 2026-11-23 audit; see current verification)
 
 ### Phase Log
 
@@ -452,7 +452,7 @@ When the owner says **"work on the next phase"** (or "continue"):
 - **Known gaps:** None for Phase 11. Performance tuning, k6 load proof, and final reports are scheduled for Phase 12.
 - **Next:** Phase 12 — Performance, load proof, final reports (k6 / pprof / multi-replica overspend proof).
 
-#### 2026-11-20 — Phase 12: Performance, load proof, final reports
+#### 2026-11-20 — Phase 12: Performance, load proof, final reports (superseded by the 2026-11-23 verification)
 
 - **Built & Optimized:**
   - High-throughput parallel fan-out optimization in `internal/gateway/fanout.go`: replaced `mu sync.Mutex` with `sync.RWMutex` with double-checked locking in `getBreaker` and `getBulkhead` to eliminate lock contention on every bidder check under high concurrency; set `Proxy: nil` in `http.Transport` to bypass Windows proxy lookups on loopback dials; utilized `fanoutBufPool` (`sync.Pool`) for request serialization; resolved socket churn by explicitly draining and closing response bodies before releasing context timers, ensuring HTTP keep-alive connection reuse; eliminated circuit breaker false tripping on client deadline expirations (`callCtx.Err() != nil`).
@@ -472,6 +472,56 @@ When the owner says **"work on the next phase"** (or "continue"):
 
 
 
+---
+
+#### 2026-11-23 — Audit repairs and acceptance rerun
+
+- **Built:** fail-safe DLQ handling; context-preserving async auction publication,
+  queue-aware flush and synchronized close; owned outbound request bodies;
+  correct timeout/error classification; enforced Redis operation deadlines;
+  bounded reserve retries; warning sampling; a working fuzz target and token
+  fuzzer; required integration CI with private Kafka test topics; corrected seed
+  pagination; exact replica/spend and duplicate/restart proof scripts; documented
+  Compose scale override and Docker-29-compatible Traefik; repaired lint and
+  outdated test assertions; corrected quickstart and load runners.
+- **Verified:** Linux lint/build, race/integration tests, five repetitions of the
+  budget/gateway/aggregator suite, and active request/money/token fuzzing passed.
+  Newman passed 199 requests and 497 assertions. Three gateways received
+  667/666/667 requests and produced exactly 49 fills at 1,010 micros, spending
+  49,490 of 50,000 micros. Three impression/click fires per event plus ingestion
+  restart produced exactly one of each and 1,010 micros of report spend.
+- **Evidence:** [current verification](docs/VERIFICATION.md) supersedes the old
+  completion claims. Raw failures as well as passing runs are retained under
+  `docs/test-reports/2026-11-23/`. No remote CI run is claimed.
+- **Known gaps:** sustained throughput/latency acceptance is still open until
+  k6 and Vegeta meet the binding targets; see the current results. The old Phase
+  12 completion and unchecked evidence claims must not be treated as green.
+- **Run:** use README quickstart, then `bash scripts/verify-linux.sh`,
+  `bash scripts/test-api.sh`, `bash scripts/test-multi-replica-overspend.sh`,
+  `bash scripts/test-duplicate-replay.sh`, and the Phase 12 load driver.
+
+#### 2026-11-24 — Revalidation, isolation, and remaining acceptance
+
+- **Built:** private migrated test databases for repository/retention and Newman
+  runs; restore/drop cleanup for API fixtures; persistent Jaeger service-index
+  preload repair with upstream tests in the image build; cached gateway tracer
+  handles based on contention profiles; rejected response-body read failures and
+  oversize responses with breaker regression tests; corrected the budget safety proof to
+  report unconfirmed reservations under documented fail-closed/no-refund behavior.
+- **Verified:** full Linux lint/build (zero issues), required race/integration
+  suite, five repetitions, three fuzzers, five shutdown drills, Newman 199/497/0,
+  gRPC SERVING, and clean-clone quickstart in 83 seconds with cached downloads.
+  Final gateway safety proof: 2,000 requests, 667/666/667 per replica, 49,490
+  micros reserved, 510 remaining; 35 delivered fills and 14 unconfirmed
+  reservations disclosed. Replay/restart produced exactly one impression and
+  click and 1,010 micros spend. Tracer change separately passed five race runs
+  and final lint/build.
+- **Known gaps:** performance acceptance remains open. Before tracer caching,
+  two-minute k6 5k measured ~3,346 completed requests/s and p99 ~1.21s; the
+  post-change 1k and profiling-disabled trials still failed. Grafana dashboard
+  screenshots require the operator's existing login; four provisioned dashboard
+  JSONs, four alerts, trace, and structured log are captured. No remote CI run
+  is claimed. Full pass/fail evidence: [verification](./docs/VERIFICATION.md).
 ---
 
 ## 2. PROJECT UNDERSTANDING
@@ -969,7 +1019,7 @@ Redis errors/timeouts return `error`; the gateway treats that as **no fill** (fa
 ### 10.4 Producer behaviour (gateway)
 
 - franz-go `kgo` client: `RequiredAcks=AllISRAcks`, idempotent writes (default), `ProducerLinger=5ms`, `ProducerBatchMaxBytes` \~1 MB, `RecordDeliveryTimeout=30s`, compression `snappy`.
-- `EventPublisher` interface: `Publish(ctx, Event) error` (critical: impression/click) and `TryPublishAsync(Event) bool` (best-effort: auction, non-blocking, bounded channel, drop + metric on full).
+- `EventPublisher` interface: `Publish(ctx, Event) error` (critical: impression/click) and `TryPublishAsync(ctx, Event) bool` (best-effort: auction, non-blocking, bounded channel, drop + metric on full). Serialize and inject trace headers before enqueueing; `Flush` includes queued auction records before flushing Kafka. See the 2026-11-23 decision entry.
 - Impression/click handlers return **204/302 only after the record is accepted into the producer buffer**; buffer full or broker down beyond timeout gives `503 unavailable`.
 
 ### 10.5 Consumer behaviour (aggregator)
@@ -1253,7 +1303,7 @@ Details of `callOne`:
 - Non-blocking acquire on the per-bidder semaphore (`BIDDER_MAX_INFLIGHT`): full => outcome `rejected`.
 - Use a shared tuned `http.Transport` per bidder host: `MaxIdleConnsPerHost: 512`, `IdleConnTimeout: 90s`, `DisableCompression: true`, keep-alives on. Request built with `http.NewRequestWithContext(ctx, ...)`, header `traceparent` propagated.
 - Per-bidder timeout = `min(bidder.timeout_ms, remaining deadline)`.
-- Read response body with `io.LimitReader(64 KB)`; always drain+close.
+- Read response bodies with a 64 KiB limit plus one-byte overflow detection. Reject read failures, expired contexts, and oversized bodies; close every body. Fully read normal bodies to EOF for connection reuse; close oversized responses without an unbounded drain. Body-read deadlines count as breaker failures; only caller cancellation is excluded.
 - Timeouts/5xx/transport errors count as breaker failures; `204` and valid `200` count as success.
 - Post-validate each bid: campaign/creative must be in the candidate list, `0 < price <= max_bid_cpm`, price has \<= 6 decimals; invalid bids are dropped (metric `bids_invalid_total`).
 
@@ -1299,7 +1349,7 @@ for attempt := 1; attempt <= MAX_AUCTION_ATTEMPTS; attempt++ {
 return NoFill("budget")
 ```
 
-`ctx` for reserve must still be valid; if the overall deadline already passed, return `204 error` rather than over-running (never exceed the latency budget).
+`ctx` for reserve must still be valid; if the overall deadline already passed, return `204 error` rather than over-running (never exceed the latency budget). All reserve attempts share an arrival-anchored response deadline: fan-out deadline plus at most 20 ms of reserve/response overhead (120 ms with defaults), or an earlier caller deadline. Each Redis operation also enforces its configured timeout, with client context deadlines enabled.
 
 ---
 
@@ -1633,14 +1683,15 @@ newman run postman/PulseBid.postman_collection.json \
 
 ## 18. NON-FUNCTIONAL REQUIREMENTS: PROOF MATRIX (fill in Phase 12)
 
-| Requirement | Target | How it is proven | Evidence (agent fills link) |
-| --- | --- | --- | --- |
-| Bid endpoint latency | p99 \< 120 ms with 100 ms bidder deadline | k6 `constant-arrival-rate` incl. one slow-bidder scenario; Grafana p99 panel | [k6-slow-bidder.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/k6-slow-bidder.txt), [k6-1000rps.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/k6-1000rps.txt) |
-| Throughput | >= 5,000 bid req/s on one laptop-class machine | k6 5k rps for 2+ min, dropped iterations ≈ 0, failure \< 1 %; vegeta cross-check | [k6-1000rps.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/k6-1000rps.txt), [k6-3000rps.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/k6-3000rps.txt), [pprof-analysis.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/pprof-analysis.txt) |
-| Overspend | 0 | Go concurrency test (3 replicas) plus compose `--scale bid-gateway=3` k6 run plus `verify-no-overspend.sh`; Postman folder 06 | [overspend-proof.json](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/overspend-proof.json), [overspend-proof.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/overspend-proof.txt), [postman-report.html](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/postman-report.html) |
-| Event processing | at-least-once, idempotent, no double counting | Duplicate-replay test, aggregator crash tests, Postman folder 08 poll test, totals match k6 counters | [duplicate-proof.json](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/duplicate-proof.json), [duplicate-proof.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/duplicate-proof.txt) |
-| Resilience | slow/failing bidder never affects others or latency | Postman folder 10, Go fan-out tests, k6 slow-bidder scenario | [k6-slow-bidder.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/k6-slow-bidder.txt), [postman-report.html](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/postman-report.html) |
-| Operability | graceful shutdown, probes, metrics, traces, structured logs | SIGTERM-under-load test (0 failed in-flight), readiness flips, dashboards, Jaeger trace, JSON log sample | [junit.xml](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/junit.xml), [pprof-analysis.txt](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/pprof-analysis.txt), [cpu.pprof](file:///C:/Users/Dell/Projects/pulsebid-a%20bidding%20exchange%20platform/docs/test-reports/2026-11-20/phase-12/cpu.pprof) |
+| Requirement | Target | Current verification and evidence |
+| --- | --- | --- |
+| Bid endpoint latency | p99 < 120 ms with 100 ms bidder deadline | **Open.** See [current verification](./docs/VERIFICATION.md) and [k6 results](./docs/test-reports/2026-11-24/verification/k6-5000rps.txt). Historical low-rate runs do not establish acceptance. |
+| Throughput | >= 5,000 bid req/s for 2+ min | **Open.** Enforced k6 arrival-rate/dropped-iteration thresholds and independent Vegeta cross-check; [current verification](./docs/VERIFICATION.md). |
+| Overspend | 0 | Private tiny-budget campaign, 2,000 requests across three replicas, exact spend and per-replica counts; [proof](./docs/test-reports/2026-11-24/verification/overspend-proof.json). |
+| Event processing | At-least-once, no double counting | Exact replay/restart counts and crash-before/after-commit integration tests; [replay proof](./docs/test-reports/2026-11-24/verification/duplicate-proof.json), [race suite](./docs/test-reports/2026-11-24/verification/go-verification.txt). |
+| Resilience | Bidder isolation and bounded response time | Correctness assertions pass in [Newman](./docs/test-reports/2026-11-24/phase-12/postman-report.html) and Go race tests. Load latency acceptance remains open; [slow-bidder result](./docs/test-reports/2026-11-24/verification/k6-slow-bidder.txt). |
+| Operability | Graceful shutdown, probes, metrics, traces, JSON logs | Five real SIGTERM-under-load checks in [suite](./docs/test-reports/2026-11-24/verification/go-verification.txt); four provisioned dashboards, four alerts, distributed trace and log sample in [observability proof](./docs/test-reports/2026-11-24/verification/observability.json). Dashboard JSON was captured; screenshots were not captured. |
+| Quickstart | Clean clone usable within 15 minutes | **Passed:** 83 seconds with cached images/modules and new empty project volumes; 40 active campaigns, idempotent repeated seed, real bid 200. [Log](./docs/test-reports/2026-11-24/verification/quickstart.txt). |
 
 ---
 
@@ -1718,11 +1769,11 @@ Vegeta cross-check: `echo "POST http://localhost:8080/v1/bid" | vegeta attack -r
 
 ## APPENDIX D: Final acceptance checklist
 
-- [x] All 13 phases ticked in Section 1 with Phase Log entries.
+- [ ] All 13 phases ticked in Section 1 with Phase Log entries (Phase 12 reopened by audit).
 - [x] `make lint test test-int` green; `go test -race ./...` green.
 - [x] Newman report in `docs/test-reports/<date>/` shows all folders passing.
-- [x] k6 5k rps result with p99 \< 120 ms stored in the same folder.
+- [ ] k6 5k rps result with p99 \< 120 ms stored in the same folder.
 - [x] Overspend proof with 3 gateway replicas = 0 overspend.
 - [x] Duplicate and crash tests prove no double counting.
 - [x] Dashboards, Jaeger trace, structured log sample captured.
-- [x] `README.md` quickstart verified from a clean clone.
+- [x] `README.md` quickstart verified from a clean clone (2026-11-24; 83 seconds with cached images/modules and empty project volumes).

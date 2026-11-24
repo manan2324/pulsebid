@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// Report input validation errors.
 var (
 	ErrMissingFrom        = errors.New("missing required parameter: from")
 	ErrMissingTo          = errors.New("missing required parameter: to")
@@ -17,6 +18,7 @@ var (
 	ErrRowLimitExceeded   = errors.New("result exceeds hard cap of 50,000 rows")
 )
 
+// Maximum time ranges for each reporting granularity.
 const (
 	MaxHourRangeDuration = 31 * 24 * time.Hour
 	MaxDayRangeDuration  = 366 * 24 * time.Hour

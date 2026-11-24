@@ -360,3 +360,84 @@ package, keeping deployment simple while allowing a later split.
 
 
 
+
+## Audit repairs (2026-11-23)
+
+- Preserve the JSON/event wire contracts. Change only the internal publisher API
+  to `TryPublishAsync(ctx, event)`: serialize at enqueue time so Kafka headers
+  preserve the server trace without retaining request contexts or mutable events.
+  A queue barrier makes `Flush` include application-buffered auctions; the worker
+  uses nonblocking Kafka enqueue and bounded delivery. Close synchronizes with
+  enqueue so no event is accepted after draining has completed.
+- Leave source offsets uncommitted on a failed DLQ write. The consumer exits with
+  an error, allowing its owner/restart to retry instead of silently losing the
+  poison record. DLQ publication itself has a bounded context.
+- Apply Redis operation timeouts inside the reserver and enable
+  `ContextTimeoutEnabled` on service clients. Keep at most 20ms after the fan-out
+  deadline for reserve/response work, clamped to an earlier caller deadline;
+  re-auction attempts share that deadline. Redis failures remain fail-closed.
+- Each bidder request owns its serialized body. A pooled buffer cannot be reused
+  on `Do` return because `RoundTripper` may close a body asynchronously. Classify
+  transport errors before cancelling their contexts to distinguish real errors
+  from timeouts. Caller cancellation is excluded from breaker failures.
+- Require external-service tests in CI and `make test-int`; optional local unit
+  runs may still skip. Give Kafka tests private six-partition topics and cleanup
+  so existing messages or the application consumer cannot satisfy test assertions.
+- Use `deploy/docker-compose.scale.yml` for replicas, with ephemeral admin host
+  ports and public event URLs through Traefik on 8088. Pin Traefik v3.6.16 for
+  the Docker API used by Docker 29; see the official
+  [migration documentation](https://doc.traefik.io/traefik/v3.6/migrate/v3/).
+- System proofs use isolated campaigns and exact counts/spend, never a database-
+  wide Redis flush. Seed through the tools-profile container after starting the
+  campaign service. Python 3 supplies JSON parsing, pagination, polling, and
+  buffered Vegeta output; shell scripts remain the entry points.
+- Keep load thresholds and exit codes binding. k6 source is tracked; only its
+  downloaded executable is ignored. Failed profiles/results are retained and
+  Phase 12 stays open until the actual latency/throughput targets pass.
+
+## Persistent Jaeger startup repair (2026-11-24)
+
+- A restart after load testing stalled inside Badger `preloadOperations`. The
+  v1.67 reader returned a service name for each indexed span, causing its caller
+  to rescan operation indexes repeatedly. The local image now builds the same
+  pinned Jaeger source with `jaeger-prefill.patch`: collect each service once,
+  retain its latest expiration (including non-expiring entries), and avoid
+  fetching values during the key-only scan. The database format, volume, and
+  existing traces are preserved. Upstream spanstore tests run in the image build;
+  startup against the existing database now reaches healthy status.
+- Source: [Jaeger v1.67 Badger reader](https://github.com/jaegertracing/jaeger/blob/v1.67.0/internal/storage/v1/badger/spanstore/reader.go).
+
+## Test isolation and scheduling (2026-11-24)
+
+- Repository/retention tests create migrated private PostgreSQL databases and
+  drop only those databases afterward. The Newman runner uses a separate
+  database and restores the normal app configuration on exit. Old API fixtures
+  can no longer win auctions belonging to a later run.
+- The budget concurrency test allows two seconds per operation while retaining
+  exact accepted/rejected/spend assertions. A fake-transport re-auction test
+  allows one second for race-instrumented scheduling. Production deadlines and
+  dedicated deadline/resilience assertions are unchanged; these tests establish
+  correctness rather than machine-speed limits.
+
+## Performance profiling and budget proof scope (2026-11-24)
+
+- Cache gateway handler and fan-out tracer handles at construction. Repeated
+  `otel.Tracer` lookups contended on the SDK provider during load. Span names,
+  context propagation, and sampling remain the same. Five race-enabled gateway
+  runs passed; the subsequent 1k comparison still failed latency acceptance.
+- The safety proof checks the planned zero-overspend guarantee: exactly 49
+  reservations of 1,010 micros fit in a 50,000-micro budget, positive successful
+  fills cannot exceed those reservations, and all three replicas receive traffic.
+  It reports unconfirmed reservations and error/no-bid response counts. Requiring
+  exactly 49 successful HTTP responses conflicts with the documented no-refund
+  behavior when a Redis response times out after executing its mutation. The two
+  earlier failures of that stronger assertion are preserved; performance failure
+  remains independently enforced and disclosed.
+
+- Reject bidder response-body read failures before interpreting HTTP 200/204.
+  An empty broken body previously became a successful no-bid; even valid partial
+  JSON must fail if the read failed. Record latency through body consumption,
+  classify deadlines before cancellation, and count these failures toward the
+  breaker. Detect 64 KiB overflow using one extra byte and close without an
+  unbounded drain. Regression tests cover empty/valid JSON read failures,
+  deadline errors, oversize bodies, closure, and breaker opening.

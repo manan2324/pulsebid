@@ -108,6 +108,7 @@ func TestRunAuction_Section12Examples(t *testing.T) {
 }
 
 func TestRunAuction_RandomPropertyTests(t *testing.T) {
+	// #nosec G404 -- Reproducible auction property tests do not require cryptographic randomness.
 	rng := rand.New(rand.NewSource(42))
 
 	for i := 0; i < 100; i++ {
@@ -175,7 +176,6 @@ func BenchmarkRunAuction(b *testing.B) {
 	}
 	floor := int64(500_000)
 
-	
 	b.ReportAllocs()
 	for b.Loop() {
 		_, _ = RunAuction(bids, floor)

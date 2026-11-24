@@ -25,18 +25,22 @@ type Reserver = budget.Reserver
 // StubReserver satisfies Reserver for tests when Redis budget enforcement is not wired.
 type StubReserver struct{}
 
-func (s StubReserver) Reserve(ctx context.Context, c budget.CampaignBudget, costMicros int64, now time.Time) (budget.Result, error) {
+// Reserve accepts a reservation without contacting Redis.
+func (s StubReserver) Reserve(_ context.Context, _ budget.CampaignBudget, _ int64, _ time.Time) (budget.Result, error) {
 	return budget.Reserved, nil
 }
 
-func (s StubReserver) Release(ctx context.Context, campaignID string, costMicros int64, now time.Time) error {
+// Release has no persisted reservation to release.
+func (s StubReserver) Release(_ context.Context, _ string, _ int64, _ time.Time) error {
 	return nil
 }
 
-func (s StubReserver) Spent(ctx context.Context, campaignID string, now time.Time) (int64, error) {
+// Spent returns zero because this test implementation does not persist spend.
+func (s StubReserver) Spent(_ context.Context, _ string, _ time.Time) (int64, error) {
 	return 0, nil
 }
 
-func (s StubReserver) Reset(ctx context.Context, campaignID string, now time.Time) error {
+// Reset has no persisted budget to reset.
+func (s StubReserver) Reset(_ context.Context, _ string, _ time.Time) error {
 	return nil
 }

@@ -1,3 +1,4 @@
+// Package budget implements atomic Redis spending caps and UTC-day pacing.
 package budget
 
 import (
@@ -62,8 +63,8 @@ type Reserver interface {
 	Reset(ctx context.Context, campaignID string, now time.Time) error
 }
 
-// BudgetKey constructs the Redis spend key pb:budget:{campaign_id}:{YYYYMMDD} (UTC).
-func BudgetKey(campaignID string, now time.Time) string {
+// Key constructs the Redis spend key pb:budget:{campaign_id}:{YYYYMMDD} (UTC).
+func Key(campaignID string, now time.Time) string {
 	return fmt.Sprintf("pb:budget:%s:%s", campaignID, now.UTC().Format("20060102"))
 }
 
@@ -177,6 +178,8 @@ func (r *RedisReserver) recordOutcome(outcome string) {
 
 // Reserve attempts to reserve costMicros against the campaign's daily budget.
 func (r *RedisReserver) Reserve(ctx context.Context, c CampaignBudget, costMicros int64, now time.Time) (Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+	defer cancel()
 	start := time.Now()
 	defer func() {
 		if r.metrics != nil && r.metrics.ReserveDuration != nil {
@@ -200,7 +203,7 @@ func (r *RedisReserver) Reserve(ctx context.Context, c CampaignBudget, costMicro
 	}
 	paceCap := ComputePaceCap(hardCap, c.PacingMode, burst, now)
 
-	key := BudgetKey(c.ID, now)
+	key := Key(c.ID, now)
 	res, err := r.reserveScript.Run(ctx, r.client, []string{key}, costMicros, hardCap, paceCap, TTLSeconds).Int64()
 	if err != nil {
 		r.recordOutcome("error")
@@ -222,16 +225,20 @@ func (r *RedisReserver) Reserve(ctx context.Context, c CampaignBudget, costMicro
 
 // Release issues a compensation refund (DECRBY clamped to 0).
 func (r *RedisReserver) Release(ctx context.Context, campaignID string, costMicros int64, now time.Time) error {
+	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+	defer cancel()
 	if costMicros <= 0 {
 		return nil
 	}
-	key := BudgetKey(campaignID, now)
+	key := Key(campaignID, now)
 	return r.releaseScript.Run(ctx, r.client, []string{key}, costMicros).Err()
 }
 
 // Spent returns the current micros spent today for the given campaign.
 func (r *RedisReserver) Spent(ctx context.Context, campaignID string, now time.Time) (int64, error) {
-	key := BudgetKey(campaignID, now)
+	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+	defer cancel()
+	key := Key(campaignID, now)
 	val, err := r.client.Get(ctx, key).Int64()
 	if errors.Is(err, redis.Nil) {
 		return 0, nil
@@ -244,6 +251,8 @@ func (r *RedisReserver) Spent(ctx context.Context, campaignID string, now time.T
 
 // Reset resets the spend today for the given campaign to 0 by deleting the key.
 func (r *RedisReserver) Reset(ctx context.Context, campaignID string, now time.Time) error {
-	key := BudgetKey(campaignID, now)
+	ctx, cancel := context.WithTimeout(ctx, r.opTimeout)
+	defer cancel()
+	key := Key(campaignID, now)
 	return r.client.Del(ctx, key).Err()
 }

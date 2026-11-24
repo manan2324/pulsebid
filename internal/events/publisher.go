@@ -28,7 +28,7 @@ type Publisher interface {
 
 	// TryPublishAsync submits best-effort events (auction) to a bounded async channel.
 	// Returns false and increments drop counter if the channel is full.
-	TryPublishAsync(ev *Event) bool
+	TryPublishAsync(ctx context.Context, ev *Event) bool
 
 	// Flush flushes all buffered records to Kafka.
 	Flush(ctx context.Context) error
@@ -95,12 +95,18 @@ type KafkaPublisher struct {
 	cl          *kgo.Client
 	topic       string
 	maxBuffered int
-	auctionChan chan *Event
+	auctionChan chan auctionItem
+	queueMu     sync.RWMutex
 	metrics     *PublisherMetrics
 	logger      *slog.Logger
 	wg          sync.WaitGroup
 	closeOnce   sync.Once
 	closed      chan struct{}
+}
+
+type auctionItem struct {
+	record  *kgo.Record
+	barrier chan struct{}
 }
 
 // NewKafkaPublisher initializes a franz-go client with Section 10.4 configurations.
@@ -147,7 +153,7 @@ func NewKafkaPublisher(cfg PublisherConfig, reg prometheus.Registerer, logger *s
 		cl:          cl,
 		topic:       cfg.Topic,
 		maxBuffered: cfg.MaxBuffered,
-		auctionChan: make(chan *Event, cfg.AsyncChannelSize),
+		auctionChan: make(chan auctionItem, cfg.AsyncChannelSize),
 		metrics:     NewPublisherMetrics(reg),
 		logger:      logger,
 		closed:      make(chan struct{}),
@@ -178,7 +184,7 @@ func NewKafkaPublisherWithClient(cl *kgo.Client, topic string, maxBuffered, asyn
 		cl:          cl,
 		topic:       topic,
 		maxBuffered: maxBuffered,
-		auctionChan: make(chan *Event, asyncChanSize),
+		auctionChan: make(chan auctionItem, asyncChanSize),
 		metrics:     NewPublisherMetrics(reg),
 		logger:      logger,
 		closed:      make(chan struct{}),
@@ -216,12 +222,27 @@ func (p *KafkaPublisher) Publish(ctx context.Context, ev *Event) error {
 
 // TryPublishAsync enqueues an auction event to the bounded async channel.
 // Returns false and increments drop counter if the channel is full (ADR-7).
-func (p *KafkaPublisher) TryPublishAsync(ev *Event) bool {
+func (p *KafkaPublisher) TryPublishAsync(ctx context.Context, ev *Event) bool {
+	// Serialize before enqueueing: preserve trace headers without retaining the
+	// request context or allowing callers to mutate an event owned by the worker.
+	rec, err := p.buildRecord(ctx, ev)
+	if err != nil {
+		p.metrics.EventsPublished.WithLabelValues(ev.Type, "error").Inc()
+		return false
+	}
+	p.queueMu.RLock()
+	defer p.queueMu.RUnlock()
 	select {
 	case <-p.closed:
 		p.metrics.EventsPublished.WithLabelValues(ev.Type, "dropped").Inc()
 		return false
-	case p.auctionChan <- ev:
+	default:
+	}
+	select {
+	case <-p.closed:
+		p.metrics.EventsPublished.WithLabelValues(ev.Type, "dropped").Inc()
+		return false
+	case p.auctionChan <- auctionItem{record: rec}:
 		p.metrics.BufferDepth.Set(float64(len(p.auctionChan)))
 		return true
 	default:
@@ -232,13 +253,36 @@ func (p *KafkaPublisher) TryPublishAsync(ev *Event) bool {
 
 // Flush flushes all records to Kafka.
 func (p *KafkaPublisher) Flush(ctx context.Context) error {
+	// A Kafka flush alone does not include records still in our own queue.
+	barrier := make(chan struct{})
+	p.queueMu.RLock()
+	select {
+	case <-p.closed:
+		p.queueMu.RUnlock()
+		return errors.New("publisher closed")
+	default:
+	}
+	select {
+	case p.auctionChan <- auctionItem{barrier: barrier}:
+		p.queueMu.RUnlock()
+	case <-ctx.Done():
+		p.queueMu.RUnlock()
+		return ctx.Err()
+	}
+	select {
+	case <-barrier:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	return p.cl.Flush(ctx)
 }
 
 // Close gracefully stops the async worker and closes the Kafka client.
 func (p *KafkaPublisher) Close() error {
 	p.closeOnce.Do(func() {
+		p.queueMu.Lock()
 		close(p.closed)
+		p.queueMu.Unlock()
 		p.wg.Wait()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -255,31 +299,33 @@ func (p *KafkaPublisher) runAuctionWorker() {
 		case <-p.closed:
 			for {
 				select {
-				case ev := <-p.auctionChan:
-					p.publishAuctionRecord(ev)
+				case item := <-p.auctionChan:
+					p.publishAuctionRecord(item)
 				default:
 					return
 				}
 			}
-		case ev := <-p.auctionChan:
-			p.publishAuctionRecord(ev)
+		case item := <-p.auctionChan:
+			p.publishAuctionRecord(item)
 		}
 	}
 }
 
-func (p *KafkaPublisher) publishAuctionRecord(ev *Event) {
+func (p *KafkaPublisher) publishAuctionRecord(item auctionItem) {
 	p.metrics.BufferDepth.Set(float64(len(p.auctionChan)))
-	rec, err := p.buildRecord(context.Background(), ev)
-	if err != nil {
-		p.metrics.EventsPublished.WithLabelValues(ev.Type, "error").Inc()
+	if item.barrier != nil {
+		close(item.barrier)
 		return
 	}
-	p.cl.Produce(context.Background(), rec, func(r *kgo.Record, err error) {
+	rec := item.record
+	// Best-effort auctions must never block the queue worker on a full Kafka
+	// buffer; record delivery itself remains bounded by DeliveryTimeout.
+	p.cl.TryProduce(context.Background(), rec, func(_ *kgo.Record, err error) {
 		if err != nil {
-			p.metrics.EventsPublished.WithLabelValues(ev.Type, "error").Inc()
-			p.logger.Error("failed to deliver auction event to kafka", "event_id", ev.EventID, "error", err)
+			p.metrics.EventsPublished.WithLabelValues(TypeAuction, "error").Inc()
+			p.logger.Error("failed to deliver auction event to kafka", "error", err)
 		} else {
-			p.metrics.EventsPublished.WithLabelValues(ev.Type, "ok").Inc()
+			p.metrics.EventsPublished.WithLabelValues(TypeAuction, "ok").Inc()
 		}
 	})
 }
@@ -350,8 +396,14 @@ func (c *kafkaHeaderCarrier) Keys() []string {
 // NoopPublisher satisfies Publisher for testing or when Kafka publishing is disabled.
 type NoopPublisher struct{}
 
-func (n NoopPublisher) Publish(context.Context, *Event) error     { return nil }
-func (n NoopPublisher) TryPublishAsync(*Event) bool                { return true }
-func (n NoopPublisher) PublishAuction(context.Context, any) error { return nil }
-func (n NoopPublisher) Flush(context.Context) error               { return nil }
-func (n NoopPublisher) Close() error                              { return nil }
+// Publish accepts an event without producing it.
+func (n NoopPublisher) Publish(context.Context, *Event) error { return nil }
+
+// TryPublishAsync accepts an auction without producing it.
+func (n NoopPublisher) TryPublishAsync(context.Context, *Event) bool { return true }
+
+// Flush has no buffered records to flush.
+func (n NoopPublisher) Flush(context.Context) error { return nil }
+
+// Close has no resources to close.
+func (n NoopPublisher) Close() error { return nil }

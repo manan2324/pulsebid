@@ -13,7 +13,7 @@ import (
 // NewServer sets up the HTTP router for event-aggregator including reporting routes.
 func NewServer(reportingSvc *reporting.Service, apiKeys []string) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))

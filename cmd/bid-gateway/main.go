@@ -11,12 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc/credentials/insecure"
-	"github.com/redis/go-redis/v9"
 	catalogv1 "pulsebid/gen/pulsebid/catalog/v1"
 	"pulsebid/internal/budget"
 	"pulsebid/internal/events"
@@ -47,40 +48,46 @@ func run(out io.Writer) (result error) {
 		return err
 	}
 
-	level, err := cfg.Common.Level()
+	level, err := cfg.Level()
 	if err != nil {
 		return err
 	}
-	logger := logging.New(out, cfg.Common.ServiceName, "dev", level)
+	logger := logging.New(out, cfg.ServiceName, "dev", level)
+	if cfg.EnableTestEndpoints {
+		// Private test-mode profiles include lock contention during load drills.
+		runtime.SetMutexProfileFraction(100)
+		runtime.SetBlockProfileRate(10_000_000)
+	}
 
-	provider, err := tracing.New(ctx, cfg.Common.ServiceName, "dev", cfg.Common.OTLPEndpoint, cfg.Common.TraceSampleRatio)
+	provider, err := tracing.New(ctx, cfg.ServiceName, "dev", cfg.OTLPEndpoint, cfg.TraceSampleRatio)
 	if err != nil {
 		return err
 	}
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(tracing.Propagator())
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Common.ShutdownTimeout)
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 		defer cancel()
 		result = errors.Join(result, provider.Shutdown(cleanup))
 	}()
 
-	m := metrics.New(cfg.Common.ServiceName)
+	m := metrics.New(cfg.ServiceName)
 	gwMetrics := gateway.NewMetrics(m.Registry)
 
 	grpcConn, err := grpcx.NewClient(cfg.CampaignGRPCAddr, insecure.NewCredentials(), provider)
 	if err != nil {
 		return fmt.Errorf("connect to campaign-service gRPC: %w", err)
 	}
-	defer grpcConn.Close()
+	defer func() { _ = grpcConn.Close() }()
 
 	rdb := redis.NewClient(&redis.Options{
-		Addr:         cfg.RedisAddr,
-		PoolSize:     512,
-		MinIdleConns: 64,
-		PoolTimeout:  500 * time.Millisecond,
+		ContextTimeoutEnabled: true,
+		Addr:                  cfg.RedisAddr,
+		PoolSize:              512,
+		MinIdleConns:          64,
+		PoolTimeout:           500 * time.Millisecond,
 	})
-	defer rdb.Close()
+	defer func() { _ = rdb.Close() }()
 	_ = m.RegisterRedis(rdb)
 
 	budgetReserver := budget.NewRedisReserver(
@@ -103,7 +110,7 @@ func run(out io.Writer) (result error) {
 	if err != nil {
 		return fmt.Errorf("create kafka event publisher: %w", err)
 	}
-	defer eventPublisher.Close()
+	defer func() { _ = eventPublisher.Close() }()
 
 	catalogClient := catalogv1.NewCatalogServiceClient(grpcConn)
 	snapshotCache := gateway.NewSnapshotCache(gwMetrics, logger, clock.Real{})
@@ -120,7 +127,7 @@ func run(out io.Writer) (result error) {
 			return rdb.Ping(ctx).Err()
 		},
 	}, time.Second)
-	adminServer := httpx.NewServer(cfg.Common.AdminAddr, httpx.AdminHandler(ready, logger, m, provider), logger)
+	adminServer := httpx.NewServer(cfg.AdminAddr, httpx.AdminHandler(ready, logger, m, provider), logger)
 
 	listenCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -130,7 +137,7 @@ func run(out io.Writer) (result error) {
 		return fmt.Errorf("listen API: %w", err)
 	}
 
-	adminListener, err := (&net.ListenConfig{}).Listen(listenCtx, "tcp", cfg.Common.AdminAddr)
+	adminListener, err := (&net.ListenConfig{}).Listen(listenCtx, "tcp", cfg.AdminAddr)
 	if err != nil {
 		return errors.Join(fmt.Errorf("listen admin: %w", err), apiListener.Close())
 	}
@@ -158,12 +165,12 @@ func run(out io.Writer) (result error) {
 	}
 
 	ready.SetReady(true)
-	logger.InfoContext(ctx, "gateway ready", "http_addr", cfg.HTTPAddr, "admin_addr", cfg.Common.AdminAddr, "campaign_grpc", cfg.CampaignGRPCAddr)
+	logger.InfoContext(ctx, "gateway ready", "http_addr", cfg.HTTPAddr, "admin_addr", cfg.AdminAddr, "campaign_grpc", cfg.CampaignGRPCAddr)
 
 	result = group.Run(func() {
 		ready.Drain()
 		logger.InfoContext(context.WithoutCancel(ctx), "gateway draining")
-	}, cfg.Common.ShutdownDelay, cfg.Common.ShutdownTimeout,
+	}, cfg.ShutdownDelay, cfg.ShutdownTimeout,
 		lifecycle.Hook{Name: "API", Stop: func(ctx context.Context) error { return httpx.Shutdown(ctx, apiServer) }},
 		lifecycle.Hook{Name: "admin", Stop: func(ctx context.Context) error { return httpx.Shutdown(ctx, adminServer) }},
 		lifecycle.Hook{Name: "grpc_conn", Stop: func(context.Context) error { return grpcConn.Close() }},

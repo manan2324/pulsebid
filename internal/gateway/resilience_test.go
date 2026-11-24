@@ -33,11 +33,11 @@ type failingEventPublisher struct {
 	droppedCount int
 }
 
-func (f *failingEventPublisher) Publish(ctx context.Context, ev *events.Event) error {
+func (f *failingEventPublisher) Publish(_ context.Context, _ *events.Event) error {
 	return errors.New("kafka broker connection refused")
 }
 
-func (f *failingEventPublisher) TryPublishAsync(ev *events.Event) bool {
+func (f *failingEventPublisher) TryPublishAsync(_ context.Context, _ *events.Event) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.droppedCount++
@@ -49,16 +49,16 @@ func (f *failingEventPublisher) Close() error                { return nil }
 
 type failingReserver struct{}
 
-func (f failingReserver) Reserve(ctx context.Context, c budget.CampaignBudget, costMicros int64, now time.Time) (budget.Result, error) {
+func (f failingReserver) Reserve(_ context.Context, _ budget.CampaignBudget, _ int64, _ time.Time) (budget.Result, error) {
 	return 0, errors.New("redis connection timeout")
 }
-func (f failingReserver) Release(ctx context.Context, campaignID string, costMicros int64, now time.Time) error {
+func (f failingReserver) Release(_ context.Context, _ string, _ int64, _ time.Time) error {
 	return errors.New("redis connection timeout")
 }
-func (f failingReserver) Spent(ctx context.Context, campaignID string, now time.Time) (int64, error) {
+func (f failingReserver) Spent(_ context.Context, _ string, _ time.Time) (int64, error) {
 	return 0, errors.New("redis connection timeout")
 }
-func (f failingReserver) Reset(ctx context.Context, campaignID string, now time.Time) error {
+func (f failingReserver) Reset(_ context.Context, _ string, _ time.Time) error {
 	return errors.New("redis connection timeout")
 }
 
@@ -79,7 +79,7 @@ func TestResilience_OneBidderSlow(t *testing.T) {
 		}
 	}
 	// b-fast responds immediately with $2.00
-	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-fast", CreativeID: "cr-1", Price: 2.00}},
@@ -115,7 +115,7 @@ func TestResilience_OneBidderSlow(t *testing.T) {
 	})
 
 	body := `{"id":"req-slow-1","imp":{"id":"i1","placement_id":"p1","w":300,"h":250,"bidfloor":0.5}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -139,10 +139,10 @@ func TestResilience_OneBidderErrors(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid/err"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/err"] = func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
-	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-fast", CreativeID: "cr-1", Price: 2.00}},
@@ -178,7 +178,7 @@ func TestResilience_OneBidderErrors(t *testing.T) {
 	})
 
 	body := `{"id":"req-err-1","imp":{"id":"i1","placement_id":"p1","w":300,"h":250,"bidfloor":0.5}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -200,10 +200,10 @@ func TestResilience_OneBidderHangs(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid/hang"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/hang"] = func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}
-	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-fast", CreativeID: "cr-1", Price: 2.00}},
@@ -239,7 +239,7 @@ func TestResilience_OneBidderHangs(t *testing.T) {
 	})
 
 	body := `{"id":"req-hang-1","imp":{"id":"i1","placement_id":"p1","w":300,"h":250,"bidfloor":0.5}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -252,10 +252,10 @@ func TestResilience_AllBiddersDown(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid/err1"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/err1"] = func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
-	transport.handlers["/bid/err2"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/err2"] = func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 	}
 
@@ -288,7 +288,7 @@ func TestResilience_AllBiddersDown(t *testing.T) {
 	})
 
 	body := `{"id":"req-all-fail","imp":{"id":"i1","placement_id":"p1","w":300,"h":250,"bidfloor":0.5}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -306,7 +306,7 @@ func TestResilience_CircuitBreaker_TripAndHalfOpen(t *testing.T) {
 
 	var mu sync.Mutex
 	returnError := true
-	transport.handlers["/bid/cb"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/cb"] = func(w http.ResponseWriter, _ *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		if returnError {
@@ -376,7 +376,7 @@ func TestResilience_Bulkhead_Rejection(t *testing.T) {
 	}
 
 	gate := make(chan struct{})
-	transport.handlers["/bid/bulkhead"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/bulkhead"] = func(w http.ResponseWriter, _ *http.Request) {
 		<-gate
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -427,7 +427,7 @@ func TestResilience_KafkaDown(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 2.50}},
@@ -477,7 +477,7 @@ func TestResilience_KafkaDown(t *testing.T) {
 
 	// (a) Bidding unaffected: POST /v1/bid still returns 200 filled
 	body := `{"id":"req-k-1","imp":{"id":"i1","placement_id":"p1","w":300,"h":250,"bidfloor":0.5}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -505,13 +505,13 @@ func TestResilience_KafkaDown(t *testing.T) {
 	require.NoError(t, err)
 
 	// (b) Impression returns 503 unavailable
-	impReq := httptest.NewRequest("GET", "/v1/events/impression?t="+signedTok, nil)
+	impReq := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/impression?t="+signedTok, nil)
 	impW := httptest.NewRecorder()
 	h.HandleImpression(impW, impReq)
 	assert.Equal(t, http.StatusServiceUnavailable, impW.Code, "impression must return 503 when Kafka is down")
 
 	// (c) Click returns 503 unavailable
-	clickReq := httptest.NewRequest("GET", "/v1/events/click?t="+signedTok, nil)
+	clickReq := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/events/click?t="+signedTok, nil)
 	clickW := httptest.NewRecorder()
 	h.HandleClick(clickW, clickReq)
 	assert.Equal(t, http.StatusServiceUnavailable, clickW.Code, "click must return 503 when Kafka is down")
@@ -520,7 +520,7 @@ func TestResilience_KafkaDown(t *testing.T) {
 // 8. Failure Scenario (g): Campaign-service down, gateway keeps last snapshot; /readyz only fails if no snapshot ever loaded
 type failingCatalogClient struct{}
 
-func (f *failingCatalogClient) GetSnapshot(ctx context.Context, in *catalogv1.GetSnapshotRequest, opts ...grpc.CallOption) (*catalogv1.GetSnapshotResponse, error) {
+func (f *failingCatalogClient) GetSnapshot(_ context.Context, _ *catalogv1.GetSnapshotRequest, _ ...grpc.CallOption) (*catalogv1.GetSnapshotResponse, error) {
 	return nil, status.Error(codes.Unavailable, "campaign service unavailable")
 }
 
@@ -555,7 +555,7 @@ func TestResilience_RedisDown(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 2.50}},
@@ -600,7 +600,7 @@ func TestResilience_RedisDown(t *testing.T) {
 	})
 
 	body := `{"id":"req-redis-down","imp":{"id":"i1","placement_id":"p1","w":300,"h":250,"bidfloor":0.5}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -614,7 +614,7 @@ func TestResilience_RedisDown(t *testing.T) {
 // 10. Graceful Shutdown: /readyz flips to 503 first so upstream load balancer drains traffic cleanly
 func TestResilience_GracefulShutdown(t *testing.T) {
 	ready := health.New(map[string]health.Check{
-		"check": func(ctx context.Context) error { return nil },
+		"check": func(_ context.Context) error { return nil },
 	}, time.Second)
 
 	ready.SetReady(true)

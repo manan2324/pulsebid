@@ -1,16 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
-
-RATE="${RATE:-5000}"
-DURATION="${DURATION:-30s}"
-GATEWAY="${GATEWAY:-http://bid-gateway:8080}"
-OUTPUT="${OUTPUT:-loadtest/vegeta/vegeta-report.txt}"
-
-echo "Running Vegeta attack at ${RATE} rps for ${DURATION} against ${GATEWAY}..."
-host_root=$PWD
-if command -v cygpath >/dev/null; then host_root=$(cygpath -m "$PWD"); fi
-
-MSYS_NO_PATHCONV=1 docker run --rm -i --entrypoint sh --network pulsebid_default \
-  -v "${host_root}/loadtest/vegeta:/work" pulsebid/vegeta:local -c \
-  "echo 'POST ${GATEWAY}/v1/bid' | vegeta attack -rate=${RATE} -duration=${DURATION} -header 'Content-Type: application/json' -body /work/bid.json | vegeta report" | tee "${OUTPUT}"
+rate="${RATE:-5000}"
+duration="${DURATION:-60s}"
+gateway="${GATEWAY:-http://127.0.0.1:8080}"
+report="${REPORT_DIR:-docs/test-reports/$(date +%F)/verification}"
+mkdir -p "$report"
+if [[ -n ${VEGETA_BIN:-} ]]; then
+  runner=("$VEGETA_BIN")
+elif command -v vegeta >/dev/null; then
+  runner=(vegeta)
+else
+  root=$PWD
+  if command -v cygpath >/dev/null; then root=$(cygpath -m "$PWD"); fi
+  runner=(docker run --rm -i --network host --mount "type=bind,source=$root,target=/work" --workdir /work --entrypoint vegeta pulsebid/vegeta:local)
+fi
+printf 'POST %s/v1/bid\n' "$gateway" | "${runner[@]}" attack \
+  -rate="$rate" -duration="$duration" -timeout=2s -max-workers=1000 -header 'Content-Type: application/json' \
+  -body loadtest/vegeta/bid.json | python3 -I scripts/buffer-stream.py "$report/vegeta.bin"
+"${runner[@]}" report -type=json "$report/vegeta.bin" > "$report/vegeta.json"
+"${runner[@]}" report "$report/vegeta.bin" | tee "$report/vegeta.txt"
+python3 -I - "$report/vegeta.json" "$rate" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding='utf-8') as stream:
+    report = json.load(stream)
+if report['success'] < 0.99 or report['latencies']['99th'] >= 120_000_000 or report['throughput'] < float(sys.argv[2]) * 0.99:
+    raise SystemExit('Vegeta throughput, success, or p99 threshold failed')
+PY

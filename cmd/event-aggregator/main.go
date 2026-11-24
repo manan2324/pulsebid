@@ -24,8 +24,8 @@ import (
 	"pulsebid/internal/platform/tracing"
 	"pulsebid/internal/reporting"
 
-	"go.opentelemetry.io/otel"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel"
 )
 
 func main() {
@@ -44,20 +44,20 @@ func run(out io.Writer) (result error) {
 		return err
 	}
 
-	level, err := cfg.Common.Level()
+	level, err := cfg.Level()
 	if err != nil {
 		return err
 	}
-	logger := logging.New(out, cfg.Common.ServiceName, "dev", level)
+	logger := logging.New(out, cfg.ServiceName, "dev", level)
 
-	provider, err := tracing.New(ctx, cfg.Common.ServiceName, "dev", cfg.Common.OTLPEndpoint, cfg.Common.TraceSampleRatio)
+	provider, err := tracing.New(ctx, cfg.ServiceName, "dev", cfg.OTLPEndpoint, cfg.TraceSampleRatio)
 	if err != nil {
 		return err
 	}
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(tracing.Propagator())
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.Common.ShutdownTimeout)
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), cfg.ShutdownTimeout)
 		defer cancel()
 		result = errors.Join(result, provider.Shutdown(cleanup))
 	}()
@@ -105,7 +105,7 @@ func run(out io.Writer) (result error) {
 			return cl.Ping(ctx)
 		},
 	}, time.Second)
-	adminServer := httpx.NewServer(cfg.Common.AdminAddr, httpx.AdminHandler(ready, logger, m, provider), logger)
+	adminServer := httpx.NewServer(cfg.AdminAddr, httpx.AdminHandler(ready, logger, m, provider), logger)
 
 	listenCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -115,7 +115,7 @@ func run(out io.Writer) (result error) {
 		return fmt.Errorf("listen API: %w", err)
 	}
 
-	adminListener, err := (&net.ListenConfig{}).Listen(listenCtx, "tcp", cfg.Common.AdminAddr)
+	adminListener, err := (&net.ListenConfig{}).Listen(listenCtx, "tcp", cfg.AdminAddr)
 	if err != nil {
 		return errors.Join(fmt.Errorf("listen admin: %w", err), apiListener.Close())
 	}
@@ -144,7 +144,7 @@ func run(out io.Writer) (result error) {
 	ready.SetReady(true)
 	logger.InfoContext(ctx, "event-aggregator ready",
 		"http_addr", cfg.HTTPAddr,
-		"admin_addr", cfg.Common.AdminAddr,
+		"admin_addr", cfg.AdminAddr,
 		"kafka_brokers", cfg.KafkaBrokers,
 		"topic", cfg.KafkaTopicEvents,
 	)
@@ -152,10 +152,10 @@ func run(out io.Writer) (result error) {
 	result = group.Run(func() {
 		ready.Drain()
 		logger.InfoContext(context.WithoutCancel(ctx), "event-aggregator draining")
-	}, cfg.Common.ShutdownDelay, cfg.Common.ShutdownTimeout,
+	}, cfg.ShutdownDelay, cfg.ShutdownTimeout,
 		lifecycle.Hook{Name: "API", Stop: func(ctx context.Context) error { return httpx.Shutdown(ctx, apiServer) }},
 		lifecycle.Hook{Name: "admin", Stop: func(ctx context.Context) error { return httpx.Shutdown(ctx, adminServer) }},
-		lifecycle.Hook{Name: "kafka", Stop: func(ctx context.Context) error {
+		lifecycle.Hook{Name: "kafka", Stop: func(_ context.Context) error {
 			cl.Close()
 			return nil
 		}},

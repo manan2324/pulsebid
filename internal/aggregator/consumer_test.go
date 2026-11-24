@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"pulsebid/internal/platform/testutil"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func setupTestKafkaClient(t *testing.T, group, topic string) (*kgo.Client, strin
 	t.Helper()
 	broker := "localhost:9092"
 	if !isKafkaAvailable(broker) {
-		t.Skip("Kafka / Redpanda is not reachable at " + broker)
+		testutil.Unavailable(t, "%s", "Kafka / Redpanda is not reachable at "+broker)
 	}
 
 	opts := []kgo.Opt{
@@ -40,7 +41,7 @@ func setupTestKafkaClient(t *testing.T, group, topic string) (*kgo.Client, strin
 }
 
 func TestConsumer_SingleEventAndDuplicate3x(t *testing.T) {
-	topic := "pulsebid.events.v1"
+	topic := testutil.KafkaTopic(t, "localhost:9092")
 	group := "test-cg-dup-" + uuid.New().String()
 	store, pool := setupTestStore(t)
 	defer store.Close()
@@ -128,12 +129,12 @@ func TestConsumer_SingleEventAndDuplicate3x(t *testing.T) {
 	require.Equal(t, int64(1500), finalSpend, "duplicate fires must not duplicate spend")
 
 	consumerCancel()
-	<-consumerDone
+	require.NoError(t, <-consumerDone)
 }
 
 func TestConsumer_MalformedMessageToDLQ(t *testing.T) {
-	topic := "pulsebid.events.v1"
-	dlqTopic := "pulsebid.events.dlq.v1"
+	topic := testutil.KafkaTopic(t, "localhost:9092")
+	dlqTopic := testutil.KafkaTopic(t, "localhost:9092")
 	group := "test-cg-dlq-" + uuid.New().String()
 	store, pool := setupTestStore(t)
 	defer store.Close()
@@ -212,7 +213,7 @@ func TestConsumer_MalformedMessageToDLQ(t *testing.T) {
 }
 
 func TestConsumer_CrashBeforeDBCommit(t *testing.T) {
-	topic := "pulsebid.events.v1"
+	topic := testutil.KafkaTopic(t, "localhost:9092")
 	group := "test-cg-crash1-" + uuid.New().String()
 	store, pool := setupTestStore(t)
 	defer store.Close()
@@ -318,7 +319,7 @@ func TestConsumer_CrashBeforeDBCommit(t *testing.T) {
 }
 
 func TestConsumer_CrashAfterDBCommitBeforeOffsetCommit(t *testing.T) {
-	topic := "pulsebid.events.v1"
+	topic := testutil.KafkaTopic(t, "localhost:9092")
 	group := "test-cg-crash2-" + uuid.New().String()
 	store, pool := setupTestStore(t)
 	defer store.Close()
@@ -430,7 +431,7 @@ func TestConsumer_CrashAfterDBCommitBeforeOffsetCommit(t *testing.T) {
 }
 
 func TestConsumer_TwoAggregatorsInOneGroup(t *testing.T) {
-	topic := "pulsebid.events.v1"
+	topic := testutil.KafkaTopic(t, "localhost:9092")
 	group := "test-cg-multi-" + uuid.New().String()
 	store, pool := setupTestStore(t)
 	defer store.Close()
@@ -526,5 +527,3 @@ func TestConsumer_CarrierAndDLQ(t *testing.T) {
 	dlq := NewKafkaDLQProducer(nil, "", nil, nil)
 	dlq.Close()
 }
-
-

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	catalogv1 "pulsebid/gen/pulsebid/catalog/v1"
@@ -18,6 +19,7 @@ import (
 	"pulsebid/internal/platform/logging"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Handler processes incoming /v1/bid HTTP requests.
@@ -32,6 +34,8 @@ type Handler struct {
 	metrics   *Metrics
 	logger    *slog.Logger
 	clk       clock.Clock
+	warnings  atomic.Uint64
+	tracer    trace.Tracer
 }
 
 // TargetingEngine wraps campaign targeting evaluation.
@@ -77,6 +81,7 @@ func NewHandler(
 		metrics:   m,
 		logger:    logger,
 		clk:       clk,
+		tracer:    otel.Tracer("pulsebid/gateway"),
 	}
 }
 
@@ -84,7 +89,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
 	// 1. Decode and validate request payload
-	_, valSpan := otel.Tracer("pulsebid/gateway").Start(r.Context(), "bid.validate")
+	_, valSpan := h.tracer.Start(r.Context(), "bid.validate")
 	var req BidRequest
 	decodeErr := httpx.DecodeJSON(w, r, &req, h.cfg.RequestMaxBytes, false)
 	if decodeErr == nil {
@@ -134,7 +139,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 5. Evaluate targeting
-	_, tgtSpan := otel.Tracer("pulsebid/gateway").Start(r.Context(), "bid.targeting")
+	_, tgtSpan := h.tracer.Start(r.Context(), "bid.targeting")
 	isExhausted := func(id string) bool {
 		return h.exhausted.IsExhausted(id, now)
 	}
@@ -152,7 +157,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. Fan out to candidate bidders in parallel
-	fanoutCtx, fanoutSpan := otel.Tracer("pulsebid/gateway").Start(r.Context(), "bid.fanout")
+	fanoutCtx, fanoutSpan := h.tracer.Start(r.Context(), "bid.fanout")
 	results := h.fanout.Run(fanoutCtx, deadline, groups, &req, snap.Bidders)
 	fanoutSpan.End()
 
@@ -248,7 +253,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var finalCostMicros int64
 	attemptsMade := 0
 
-	_, aucSpan := otel.Tracer("pulsebid/gateway").Start(r.Context(), "bid.auction")
+	_, aucSpan := h.tracer.Start(r.Context(), "bid.auction")
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		attemptsMade = attempt
 		res, ok := RunAuction(bids, floorMicros)
@@ -257,7 +262,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if attempt > 1 {
 				if len(allValidBids) > 0 {
 					blockedBidID, _ := ids.New()
-					h.events.TryPublishAsync(&events.Event{
+					h.events.TryPublishAsync(r.Context(), &events.Event{
 						SchemaVersion:    events.CurrentSchemaVersion,
 						EventID:          events.EventID(events.TypeAuction, blockedBidID),
 						Type:             events.TypeAuction,
@@ -301,8 +306,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if reserveTimeout <= 0 {
 			reserveTimeout = 10 * time.Millisecond
 		}
-		if dl, ok := r.Context().Deadline(); ok {
-			remaining := time.Until(dl)
+		// Fan-out owns its deadline; leave at most 20ms for reservation and
+		// response work within the default 120ms HTTP latency budget. Every
+		// re-auction shares this arrival-anchored deadline.
+		reserveDeadline := deadline.Add(20 * time.Millisecond)
+		if dl, ok := r.Context().Deadline(); ok && dl.Before(reserveDeadline) {
+			reserveDeadline = dl
+		}
+		{
+			remaining := time.Until(reserveDeadline)
 			if remaining <= 0 {
 				aucSpan.End()
 				h.recordOutcome(r.Context(), "error", start, req.ID)
@@ -315,7 +327,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		reserveCtx, cancel := context.WithTimeout(r.Context(), reserveTimeout)
-		bCtx, bSpan := otel.Tracer("pulsebid/gateway").Start(reserveCtx, "bid.budget_reserve")
+		bCtx, bSpan := h.tracer.Start(reserveCtx, "bid.budget_reserve")
 		resResult, err := h.reserver.Reserve(bCtx, campBudget, costMicros, now)
 		bSpan.End()
 		cancel()
@@ -343,7 +355,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	aucSpan.End()
 	if len(allValidBids) > 0 {
 		blockedBidID, _ := ids.New()
-		h.events.TryPublishAsync(&events.Event{
+		h.events.TryPublishAsync(r.Context(), &events.Event{
 			SchemaVersion:    events.CurrentSchemaVersion,
 			EventID:          events.EventID(events.TypeAuction, blockedBidID),
 			Type:             events.TypeAuction,
@@ -365,7 +377,7 @@ AuctionDone:
 	if h.metrics != nil && h.metrics.AuctionClearingPriceMicros != nil {
 		h.metrics.AuctionClearingPriceMicros.Observe(float64(auctionRes.ClearingCPM))
 	}
-	_, respSpan := otel.Tracer("pulsebid/gateway").Start(r.Context(), "bid.respond")
+	_, respSpan := h.tracer.Start(r.Context(), "bid.respond")
 	defer respSpan.End()
 
 	debugHeader := formatDebug(attemptsMade)
@@ -421,7 +433,7 @@ AuctionDone:
 
 	// Emit auction event for the filled auction
 	if len(participants) > 0 {
-		h.events.TryPublishAsync(&events.Event{
+		h.events.TryPublishAsync(r.Context(), &events.Event{
 			SchemaVersion:    events.CurrentSchemaVersion,
 			EventID:          events.EventID(events.TypeAuction, bidID),
 			Type:             events.TypeAuction,
@@ -464,7 +476,7 @@ AuctionDone:
 	httpx.WriteJSON(w, r, http.StatusOK, resp)
 }
 
-func (h *Handler) writeNoFill(w http.ResponseWriter, r *http.Request, reason, debug string, start time.Time) {
+func (h *Handler) writeNoFill(w http.ResponseWriter, _ *http.Request, reason, debug string, start time.Time) {
 	durMS := float64(time.Since(start).Microseconds()) / 1000.0
 	w.Header().Set("Server-Timing", fmt.Sprintf("total;dur=%.1f", durMS))
 	w.Header().Set("X-PulseBid-Reason", reason)
@@ -487,7 +499,9 @@ func (h *Handler) recordOutcome(ctx context.Context, outcome string, start time.
 		}
 		durMS := dur.Milliseconds()
 		if dur > 110*time.Millisecond || outcome == "error" {
-			h.logger.WarnContext(logCtx, "bid processed", "outcome", outcome, "duration_ms", durMS)
+			if (h.warnings.Add(1)-1)%100 == 0 {
+				h.logger.WarnContext(logCtx, "bid processed", "outcome", outcome, "duration_ms", durMS)
+			}
 		} else {
 			h.logger.DebugContext(logCtx, "bid processed", "outcome", outcome, "duration_ms", durMS)
 		}

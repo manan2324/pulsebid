@@ -43,6 +43,7 @@ type BidderResult struct {
 
 // Fanout orchestrates parallel calls to external bidders with isolation and circuit breakers.
 type Fanout struct {
+	tracer         trace.Tracer
 	client         *http.Client
 	metrics        *Metrics
 	logger         *slog.Logger
@@ -54,12 +55,6 @@ type Fanout struct {
 	mu        sync.RWMutex
 	breakers  map[string]*gobreaker.TwoStepCircuitBreaker[any]
 	bulkheads map[string]*semaphore.Weighted
-}
-
-var fanoutBufPool = sync.Pool{
-	New: func() any {
-		return new(bytes.Buffer)
-	},
 }
 
 // NewFanout initializes a new Fanout engine.
@@ -79,6 +74,7 @@ func NewFanout(cfg Config, m *Metrics, logger *slog.Logger, transport http.Round
 		}
 	}
 	return &Fanout{
+		tracer:         otel.Tracer("pulsebid/gateway"),
 		client:         &http.Client{Transport: transport},
 		metrics:        m,
 		logger:         logger,
@@ -209,7 +205,7 @@ type outboundBidResponse struct {
 func (f *Fanout) callOne(ctx context.Context, bidderID string, bidder *catalogv1.Bidder, cands []Candidate, req *BidRequest) (res BidderResult) {
 	start := time.Now()
 
-	callCtx, span := otel.Tracer("pulsebid/gateway").Start(ctx, "bidder.call",
+	callCtx, span := f.tracer.Start(ctx, "bidder.call",
 		trace.WithAttributes(attribute.String("bidder.id", bidderID)),
 	)
 	defer func() {
@@ -294,17 +290,18 @@ func (f *Fanout) callOne(ctx context.Context, bidderID string, bidder *catalogv1
 		Candidates: candList,
 	}
 
-	buf := fanoutBufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer fanoutBufPool.Put(buf)
-	if err := json.NewEncoder(buf).Encode(outReq); err != nil {
+	// A transport may finish closing a request body after Do returns an error.
+	// Give each request its own bytes; returning a pooled bytes.Buffer here can
+	// overwrite a body that an asynchronous transport writer still owns.
+	payload, err := json.Marshal(outReq)
+	if err != nil {
 		cancel()
 		done(err)
 		f.record(bidderID, "error", time.Since(start))
 		return BidderResult{BidderID: bidderID, Outcome: "error", Latency: time.Since(start)}
 	}
 
-	httpReq, err := http.NewRequestWithContext(reqCtx, "POST", bidder.GetEndpointUrl(), buf)
+	httpReq, err := http.NewRequestWithContext(reqCtx, "POST", bidder.GetEndpointUrl(), bytes.NewReader(payload))
 	if err != nil {
 		cancel()
 		done(err)
@@ -320,24 +317,46 @@ func (f *Fanout) callOne(ctx context.Context, bidderID string, bidder *catalogv1
 	latency := time.Since(start)
 
 	if err != nil {
+		timedOut := errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || reqCtx.Err() != nil
 		cancel()
-		if callCtx.Err() != nil || errors.Is(err, context.Canceled) {
-			done(nil) // Client or auction-level cancellation should not count against bidder circuit breaker
+		if errors.Is(callCtx.Err(), context.Canceled) {
+			done(nil) // A caller cancellation is not a bidder failure.
 		} else {
 			done(err)
 		}
 		outcome := "error"
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || reqCtx.Err() != nil {
+		if timedOut {
 			outcome = "timeout"
 		}
 		f.record(bidderID, outcome, latency)
 		return BidderResult{BidderID: bidderID, Outcome: outcome, Latency: latency}
 	}
 
-	bodyBytes, _ := io.ReadAll(io.LimitReader(httpResp.Body, 64*1024))
-	_, _ = io.Copy(io.Discard, httpResp.Body)
+	const maxResponseBytes = 64 * 1024
+	bodyBytes, readErr := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBytes+1))
+	if len(bodyBytes) > maxResponseBytes {
+		readErr = fmt.Errorf("bidder response exceeds %d bytes", maxResponseBytes)
+	}
+	if readErr == nil {
+		readErr = reqCtx.Err()
+	}
 	_ = httpResp.Body.Close()
+	timedOut := errors.Is(readErr, context.DeadlineExceeded) || reqCtx.Err() != nil
 	cancel()
+	latency = time.Since(start)
+	if readErr != nil {
+		if errors.Is(callCtx.Err(), context.Canceled) {
+			done(nil)
+		} else {
+			done(readErr)
+		}
+		outcome := "error"
+		if timedOut {
+			outcome = "timeout"
+		}
+		f.record(bidderID, outcome, latency)
+		return BidderResult{BidderID: bidderID, Outcome: outcome, Latency: latency}
+	}
 
 	if httpResp.StatusCode == http.StatusNoContent {
 		done(nil)
@@ -355,13 +374,13 @@ func (f *Fanout) callOne(ctx context.Context, bidderID string, bidder *catalogv1
 	var respPayload outboundBidResponse
 	if len(bodyBytes) > 0 {
 		if err := json.Unmarshal(bodyBytes, &respPayload); err != nil {
-			if callCtx.Err() != nil || errors.Is(err, context.Canceled) {
+			if errors.Is(callCtx.Err(), context.Canceled) {
 				done(nil)
 			} else {
 				done(err)
 			}
 			outcome := "error"
-			if callCtx.Err() != nil {
+			if errors.Is(callCtx.Err(), context.DeadlineExceeded) {
 				outcome = "timeout"
 			}
 			f.record(bidderID, outcome, latency)

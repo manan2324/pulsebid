@@ -5,14 +5,29 @@ read -r -a compose <<< "${COMPOSE:-docker compose}"
 env_file=${COMPOSE_ENV_FILE:-.env}
 [[ -f $env_file ]] || env_file=.env.example
 compose+=(--env-file "$env_file" -f deploy/docker-compose.yml)
+base_compose=("${compose[@]}")
 "${compose[@]}" up -d --wait --wait-timeout 180
+export TEST_DATABASE_NAME="pulsebid_api_$(date +%s)_$$"
+"${base_compose[@]}" exec -T postgres createdb -U pulsebid "$TEST_DATABASE_NAME"
+cleanup() {
+  result=$?
+  trap - EXIT
+  set +e
+  # Restore the normal databases before dropping only this run's private DB.
+  "${base_compose[@]}" --profile apps up --no-build -d --wait --wait-timeout 180 campaign-service event-aggregator bid-gateway
+  restored=$?
+  "${base_compose[@]}" exec -T postgres dropdb -U pulsebid --force "$TEST_DATABASE_NAME"
+  dropped=$?
+  if (( restored != 0 || dropped != 0 )); then exit 1; fi
+  exit "$result"
+}
+trap cleanup EXIT
+compose+=(-f deploy/docker-compose.test.yml)
 "${compose[@]}" --profile tools run --build --rm migrate up
 "${compose[@]}" --profile apps up --build -d --wait --wait-timeout 180 campaign-service bid-gateway event-aggregator mock-bidders
 report="docs/test-reports/$(date +%F)/${PHASE:-phase-12}"
 mkdir -p "$report"
-"${compose[@]}" exec -T postgres psql -U pulsebid -d pulsebid -c "DELETE FROM campaigns WHERE bidder_id LIKE 'pm-%'; DELETE FROM bidders WHERE id LIKE 'pm-%'; DELETE FROM advertisers WHERE name LIKE 'Postman %' OR name LIKE 'Archive %';" || true
-"${compose[@]}" exec -T redis redis-cli flushdb || true
-RUN_SEED=1 CAMPAIGN_URL="${CAMPAIGN_URL:-http://localhost:8081}" BIDDER_HOST="${BIDDER_HOST:-http://mock-bidders}" go run ./cmd/seed || true
+"${compose[@]}" --profile tools run --build --rm seed
 host_root=$PWD
 if command -v cygpath >/dev/null; then host_root=$(cygpath -m "$PWD"); fi
 MSYS_NO_PATHCONV=1 docker run --rm --network pulsebid_default \

@@ -1,0 +1,11 @@
+# Dedicated database for each Newman run; live application rows are preserved.
+services:
+  campaign-service:
+    environment:
+      DATABASE_URL: postgres://pulsebid:pulsebid@postgres:5432/${TEST_DATABASE_NAME:?set TEST_DATABASE_NAME}?sslmode=disable
+  event-aggregator:
+    environment:
+      DATABASE_URL: postgres://pulsebid:pulsebid@postgres:5432/${TEST_DATABASE_NAME:?set TEST_DATABASE_NAME}?sslmode=disable
+  migrate:
+    environment:
+      DATABASE_URL: postgres://pulsebid:pulsebid@postgres:5432/${TEST_DATABASE_NAME:?set TEST_DATABASE_NAME}?sslmode=disable

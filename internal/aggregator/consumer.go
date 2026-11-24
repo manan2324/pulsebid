@@ -21,14 +21,14 @@ import (
 // Consumer polls events from Kafka, decodes them, forwards malformed messages to DLQ,
 // and processes valid events through the deduplicating store in batches (Section 10.5).
 type Consumer struct {
-	cl                                      *kgo.Client
-	store                                   Store
-	dlq                                     DLQProducer
-	cfg                                     Config
-	metrics                                 *Metrics
-	logger                                  *slog.Logger
-	tracer                                  trace.Tracer
-	failpointBeforeDBCommit                 func(evs []*events.Event) error
+	cl                                       *kgo.Client
+	store                                    Store
+	dlq                                      DLQProducer
+	cfg                                      Config
+	metrics                                  *Metrics
+	logger                                   *slog.Logger
+	tracer                                   trace.Tracer
+	failpointBeforeDBCommit                  func(evs []*events.Event) error
 	failpointAfterDBCommitBeforeOffsetCommit func(evs []*events.Event) error
 }
 
@@ -147,38 +147,50 @@ func (c *Consumer) processChunk(ctx context.Context, chunk []*kgo.Record) error 
 		var ev events.Event
 		if err := json.Unmarshal(rec.Value, &ev); err != nil {
 			if c.dlq != nil {
-				_ = c.dlq.PublishDLQ(ctx, rec, fmt.Sprintf("malformed_json: %v", err))
+				if err := c.publishDLQ(ctx, rec, fmt.Sprintf("malformed_json: %v", err)); err != nil {
+					return fmt.Errorf("publish dead-letter record: %w", err)
+				}
 			}
 			continue
 		}
 		if ev.SchemaVersion != events.CurrentSchemaVersion {
 			if c.dlq != nil {
-				_ = c.dlq.PublishDLQ(ctx, rec, fmt.Sprintf("unsupported_schema_version: %d", ev.SchemaVersion))
+				if err := c.publishDLQ(ctx, rec, fmt.Sprintf("unsupported_schema_version: %d", ev.SchemaVersion)); err != nil {
+					return fmt.Errorf("publish dead-letter record: %w", err)
+				}
 			}
 			continue
 		}
 		if ev.EventID == "" {
 			if c.dlq != nil {
-				_ = c.dlq.PublishDLQ(ctx, rec, "missing_event_id")
+				if err := c.publishDLQ(ctx, rec, "missing_event_id"); err != nil {
+					return fmt.Errorf("publish dead-letter record: %w", err)
+				}
 			}
 			continue
 		}
 		if _, err := uuid.Parse(ev.EventID); err != nil {
 			if c.dlq != nil {
-				_ = c.dlq.PublishDLQ(ctx, rec, fmt.Sprintf("invalid_event_id_uuid: %v", err))
+				if err := c.publishDLQ(ctx, rec, fmt.Sprintf("invalid_event_id_uuid: %v", err)); err != nil {
+					return fmt.Errorf("publish dead-letter record: %w", err)
+				}
 			}
 			continue
 		}
 		if ev.Type != events.TypeImpression && ev.Type != events.TypeClick && ev.Type != events.TypeAuction {
 			if c.dlq != nil {
-				_ = c.dlq.PublishDLQ(ctx, rec, fmt.Sprintf("unknown_event_type: %q", ev.Type))
+				if err := c.publishDLQ(ctx, rec, fmt.Sprintf("unknown_event_type: %q", ev.Type)); err != nil {
+					return fmt.Errorf("publish dead-letter record: %w", err)
+				}
 			}
 			continue
 		}
 		if ev.CampaignID != "" {
 			if _, err := uuid.Parse(ev.CampaignID); err != nil {
 				if c.dlq != nil {
-					_ = c.dlq.PublishDLQ(ctx, rec, fmt.Sprintf("invalid_campaign_id_uuid: %v", err))
+					if err := c.publishDLQ(ctx, rec, fmt.Sprintf("invalid_campaign_id_uuid: %v", err)); err != nil {
+						return fmt.Errorf("publish dead-letter record: %w", err)
+					}
 				}
 				continue
 			}
@@ -186,7 +198,9 @@ func (c *Consumer) processChunk(ctx context.Context, chunk []*kgo.Record) error 
 		if ev.WinnerCampaignID != "" {
 			if _, err := uuid.Parse(ev.WinnerCampaignID); err != nil {
 				if c.dlq != nil {
-					_ = c.dlq.PublishDLQ(ctx, rec, fmt.Sprintf("invalid_winner_campaign_id_uuid: %v", err))
+					if err := c.publishDLQ(ctx, rec, fmt.Sprintf("invalid_winner_campaign_id_uuid: %v", err)); err != nil {
+						return fmt.Errorf("publish dead-letter record: %w", err)
+					}
 				}
 				continue
 			}
@@ -202,7 +216,9 @@ func (c *Consumer) processChunk(ctx context.Context, chunk []*kgo.Record) error 
 		}
 		if invalidParticipant {
 			if c.dlq != nil {
-				_ = c.dlq.PublishDLQ(ctx, rec, "invalid_participant_uuid")
+				if err := c.publishDLQ(ctx, rec, "invalid_participant_uuid"); err != nil {
+					return fmt.Errorf("publish dead-letter record: %w", err)
+				}
 			}
 			continue
 		}
@@ -270,6 +286,14 @@ func (c *Consumer) processChunk(ctx context.Context, chunk []*kgo.Record) error 
 	}
 
 	return nil
+}
+
+// publishDLQ bounds broker waits; returning an error leaves source offsets
+// uncommitted, so an unavailable dead-letter topic cannot silently lose data.
+func (c *Consumer) publishDLQ(ctx context.Context, rec *kgo.Record, reason string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return c.dlq.PublishDLQ(ctx, rec, reason)
 }
 
 type kafkaRecordHeaderCarrier struct {

@@ -13,6 +13,7 @@ SERVICE ?= bid-gateway
 N ?= 8
 RATE ?= 5000
 DURATION ?= 2m
+FUZZTIME ?= 10s
 
 .PHONY: help up down reset topics build lint fmt test test-int bench fuzz \
         migrate-up migrate-down proto sqlc generate run-campaign run-gateway \
@@ -20,7 +21,7 @@ DURATION ?= 2m
         load verify-no-overspend docker-build test-platform test-grpc
 
 help:
-	@printf '%s\n' 'make up topics lint test build' 'make test-platform checks all five admin servers and SIGTERM (Linux/macOS).' 'make down stops infrastructure and preserves data.' 'make reset deletes local infrastructure volumes (requires CONFIRM=1).' 'Later-phase targets report their required phase until implemented.'
+	@printf '%s\n' 'make up topics lint test build' 'make test-platform checks all five admin servers and SIGTERM (Linux/macOS).' 'make down stops infrastructure and preserves data.' 'make reset deletes local infrastructure volumes (requires CONFIRM=1).' 'See README for required integration, fuzz, API, and load verification.'
 
 up:
 	$(DC) up -d --wait --wait-timeout 180
@@ -58,7 +59,7 @@ bench:
 	$(GO) test -run '^$$' -bench . -benchmem ./...
 
 test-int:
-	$(GO) test -race -count=1 -tags=integration -coverpkg=./internal/campaign,./migrations -coverprofile=coverage-integration.out ./internal/campaign ./migrations
+	REQUIRE_INTEGRATION=1 $(GO) test -race -count=1 -tags=integration -coverprofile=coverage-integration.out ./...
 
 migrate-up:
 	@COMPOSE_ENV_FILE='$(COMPOSE_ENV_FILE)' bash scripts/migrate.sh up
@@ -93,7 +94,9 @@ seed:
 	RUN_SEED=1 $(GO) run ./cmd/seed
 
 fuzz:
-	@bash scripts/phase-required.sh 5 fuzz
+	$(GO) test ./internal/gateway -run '^$$' -fuzz '^FuzzDecodeAndValidateRequest$$' -fuzztime $(FUZZTIME)
+	$(GO) test ./internal/platform/money -run '^$$' -fuzz '^FuzzJSONRoundTrip$$' -fuzztime $(FUZZTIME)
+	$(GO) test ./internal/events/token -run '^$$' -fuzz '^FuzzVerify$$' -fuzztime $(FUZZTIME)
 
 run-gateway-replicas:
 	@bash scripts/run-gateway-replicas.sh

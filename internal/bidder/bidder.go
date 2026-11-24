@@ -1,3 +1,4 @@
+// Package bidder implements configurable mock demand partners for exchange tests.
 package bidder
 
 import (
@@ -85,6 +86,7 @@ func NewServer(id string, port int, initial Config, logger *slog.Logger) (*Serve
 	var seed int64
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err == nil {
+		// #nosec G115 -- A random seed intentionally uses all 64 bits, including the sign bit.
 		seed = int64(binary.LittleEndian.Uint64(b[:]))
 	} else {
 		seed = time.Now().UnixNano()
@@ -170,13 +172,13 @@ func (s *Server) randomIntn(n int) int {
 	return s.rng.Intn(n)
 }
 
-func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
-func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 	if s.draining.Load() {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -188,7 +190,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"ready"}`))
 }
 
-func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	cfg := s.CurrentConfig()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(cfg)
@@ -315,6 +317,7 @@ func (s *Server) handleBid(w http.ResponseWriter, r *http.Request) {
 			h := fnv.New64a()
 			_, _ = h.Write([]byte(req.RequestID))
 			_, _ = h.Write([]byte(cand.CampaignID))
+			// #nosec G115 -- Deterministic seed mixing intentionally wraps modulo 2^64.
 			subSeed := cfg.Seed + int64(h.Sum64())
 			subRng := mrand.New(mrand.NewSource(subSeed)) // #nosec G404 -- deterministic test seed
 

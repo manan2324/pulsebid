@@ -11,7 +11,7 @@ func TestConfig_LoadAndValidate(t *testing.T) {
 	cfg, err := LoadConfig()
 	require.NoError(t, err)
 	require.Equal(t, ":8083", cfg.HTTPAddr)
-	require.Equal(t, ":8093", cfg.Common.AdminAddr)
+	require.Equal(t, ":8093", cfg.AdminAddr)
 	require.Equal(t, "pulsebid.events.v1", cfg.KafkaTopicEvents)
 	require.Equal(t, "pulsebid.events.dlq.v1", cfg.KafkaTopicDLQ)
 	require.Equal(t, "pulsebid-aggregator", cfg.ConsumerGroup)

@@ -1,3 +1,4 @@
+// Package events defines exchange events and durable Kafka publication.
 package events
 
 import (
@@ -6,9 +7,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// Fixed namespace UUID for PulseBid deterministic event UUIDv5 generation (ADR-5).
+// NamespacePulseBid is the fixed namespace for deterministic event UUIDv5 generation (ADR-5).
 var NamespacePulseBid = uuid.MustParse("0193f000-0000-7000-8000-000000000000")
 
+// Event types and the supported wire schema version.
 const (
 	TypeImpression = "impression"
 	TypeClick      = "click"

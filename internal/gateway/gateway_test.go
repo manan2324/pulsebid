@@ -21,17 +21,17 @@ import (
 	"pulsebid/internal/platform/clock"
 )
 
-func setupTestGateway(t *testing.T, transport http.RoundTripper, enableTest bool) (*Handler, *SnapshotCache) {
+func setupTestGateway(_ *testing.T, transport http.RoundTripper, enableTest bool) (*Handler, *SnapshotCache) {
 	cfg := Config{
-		HTTPAddr:            ":8080",
-		PublicBaseURL:       "http://localhost:8080",
-		BidderDeadlineMS:    100,
-		RequestMaxBytes:     16384,
-		BidderMaxInflight:   512,
-		CBMinRequests:       20,
-		CBFailureRatio:      0.5,
-		CBOpenFor:           5 * time.Second,
-		MaxAuctionAttempts:  3,
+		HTTPAddr:           ":8080",
+		PublicBaseURL:      "http://localhost:8080",
+		BidderDeadlineMS:   100,
+		RequestMaxBytes:    16384,
+		BidderMaxInflight:  512,
+		CBMinRequests:      20,
+		CBFailureRatio:     0.5,
+		CBOpenFor:          5 * time.Second,
+		MaxAuctionAttempts: 3,
 	}
 	cfg.EnableTestEndpoints = enableTest
 
@@ -51,7 +51,7 @@ func TestHandler_HappyPath200(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 2.50}},
@@ -91,7 +91,7 @@ func TestHandler_HappyPath200(t *testing.T) {
 	})
 
 	body := `{"id":"req-123","imp":{"id":"imp-1","placement_id":"top-banner","w":300,"h":250,"bidfloor":0.50},"device":{"type":"mobile"},"geo":{"country":"IN"}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-Id", "trace-req-123")
 	rec := httptest.NewRecorder()
@@ -99,7 +99,7 @@ func TestHandler_HappyPath200(t *testing.T) {
 	h.ServeHTTP(rec, req)
 
 	res := rec.Result()
-	defer res.Body.Close()
+	defer func() { _ = res.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Contains(t, res.Header.Get("Server-Timing"), "total;dur=")
@@ -134,10 +134,10 @@ func TestHandler_NoFillReasons(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid/nobid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/nobid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}
-	transport.handlers["/bid/low"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/low"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-low", CreativeID: "cr-1", Price: 0.40}},
@@ -171,7 +171,7 @@ func TestHandler_NoFillReasons(t *testing.T) {
 	})
 
 	// Case 1: no_eligible (country DE matches neither US nor IN)
-	req1 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"r1","imp":{"id":"i1","placement_id":"p1"},"geo":{"country":"DE"}}`))
+	req1 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"r1","imp":{"id":"i1","placement_id":"p1"},"geo":{"country":"DE"}}`))
 	req1.Header.Set("Content-Type", "application/json")
 	rec1 := httptest.NewRecorder()
 	h.ServeHTTP(rec1, req1)
@@ -179,7 +179,7 @@ func TestHandler_NoFillReasons(t *testing.T) {
 	assert.Equal(t, "no_eligible", rec1.Header().Get("X-PulseBid-Reason"))
 
 	// Case 2: no_bids (matches camp-geo with b-nobid which returns 204)
-	req2 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"r2","imp":{"id":"i1","placement_id":"p1"},"geo":{"country":"US"}}`))
+	req2 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"r2","imp":{"id":"i1","placement_id":"p1"},"geo":{"country":"US"}}`))
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	h.ServeHTTP(rec2, req2)
@@ -187,7 +187,7 @@ func TestHandler_NoFillReasons(t *testing.T) {
 	assert.Equal(t, "no_bids", rec2.Header().Get("X-PulseBid-Reason"))
 
 	// Case 3: below_floor (matches camp-low which bids 0.40, floor is 1.00)
-	req3 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"r3","imp":{"id":"i1","placement_id":"p1","bidfloor":1.00},"geo":{"country":"IN"}}`))
+	req3 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"r3","imp":{"id":"i1","placement_id":"p1","bidfloor":1.00},"geo":{"country":"IN"}}`))
 	req3.Header.Set("Content-Type", "application/json")
 	rec3 := httptest.NewRecorder()
 	h.ServeHTTP(rec3, req3)
@@ -197,7 +197,7 @@ func TestHandler_NoFillReasons(t *testing.T) {
 
 func TestHandler_TimeOfDayHeaderOverride(t *testing.T) {
 	transport := &fakeBidderTransport{handlers: make(map[string]http.HandlerFunc)}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-hours", CreativeID: "cr-1", Price: 2.00}},
@@ -224,7 +224,7 @@ func TestHandler_TimeOfDayHeaderOverride(t *testing.T) {
 	})
 
 	// Match at 03:30 UTC
-	reqMatch := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"r1","imp":{"id":"i1","placement_id":"p1"}}`))
+	reqMatch := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"r1","imp":{"id":"i1","placement_id":"p1"}}`))
 	reqMatch.Header.Set("Content-Type", "application/json")
 	reqMatch.Header.Set("X-PulseBid-Test-Time", "2026-11-18T03:30:00Z")
 	recMatch := httptest.NewRecorder()
@@ -232,7 +232,7 @@ func TestHandler_TimeOfDayHeaderOverride(t *testing.T) {
 	assert.Equal(t, http.StatusOK, recMatch.Code)
 
 	// Mismatch at 10:00 UTC
-	reqMiss := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"r2","imp":{"id":"i1","placement_id":"p1"}}`))
+	reqMiss := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"r2","imp":{"id":"i1","placement_id":"p1"}}`))
 	reqMiss.Header.Set("Content-Type", "application/json")
 	reqMiss.Header.Set("X-PulseBid-Test-Time", "2026-11-18T10:00:00Z")
 	recMiss := httptest.NewRecorder()
@@ -246,21 +246,21 @@ func TestHandler_ErrorNegatives(t *testing.T) {
 	snapCache.Set(&catalogv1.GetSnapshotResponse{Version: 1})
 
 	// 1. Wrong Content-Type => 415
-	req415 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"r1"}`))
+	req415 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"r1"}`))
 	req415.Header.Set("Content-Type", "text/plain")
 	rec415 := httptest.NewRecorder()
 	h.ServeHTTP(rec415, req415)
 	assert.Equal(t, http.StatusUnsupportedMediaType, rec415.Code)
 
 	// 2. Body too large => 413
-	req413 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{"id":"`+strings.Repeat("a", 20000)+`"}`))
+	req413 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{"id":"`+strings.Repeat("a", 20000)+`"}`))
 	req413.Header.Set("Content-Type", "application/json")
 	rec413 := httptest.NewRecorder()
 	h.ServeHTTP(rec413, req413)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec413.Code)
 
 	// 3. Invalid JSON => 400
-	req400 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(`{malformed`))
+	req400 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(`{malformed`))
 	req400.Header.Set("Content-Type", "application/json")
 	rec400 := httptest.NewRecorder()
 	h.ServeHTTP(rec400, req400)
@@ -269,7 +269,7 @@ func TestHandler_ErrorNegatives(t *testing.T) {
 
 func BenchmarkBidHandler_Filled(b *testing.B) {
 	transport := &fakeBidderTransport{handlers: make(map[string]http.HandlerFunc)}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 2.00}},
@@ -316,10 +316,9 @@ func BenchmarkBidHandler_Filled(b *testing.B) {
 
 	payload := `{"id":"req-1","imp":{"id":"i1","placement_id":"top-banner","w":300,"h":250,"bidfloor":0.50},"device":{"type":"mobile"},"geo":{"country":"IN"}}`
 
-	
 	b.ReportAllocs()
 	for b.Loop() {
-		req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(payload))
+		req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -339,20 +338,20 @@ func (m customMockReserver) Reserve(ctx context.Context, c budget.CampaignBudget
 	return budget.Reserved, nil
 }
 func (m customMockReserver) Release(context.Context, string, int64, time.Time) error { return nil }
-func (m customMockReserver) Spent(context.Context, string, time.Time) (int64, error)  { return 0, nil }
-func (m customMockReserver) Reset(context.Context, string, time.Time) error           { return nil }
+func (m customMockReserver) Spent(context.Context, string, time.Time) (int64, error) { return 0, nil }
+func (m customMockReserver) Reset(context.Context, string, time.Time) error          { return nil }
 
 func TestHandler_ReAuctionOnBudgetExhaustion(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid1"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid1"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 3.00}},
 		})
 	}
-	transport.handlers["/bid2"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid2"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-2", CreativeID: "cr-2", Price: 2.00}},
@@ -362,7 +361,7 @@ func TestHandler_ReAuctionOnBudgetExhaustion(t *testing.T) {
 	cfg := Config{
 		HTTPAddr:            ":8080",
 		PublicBaseURL:       "http://localhost:8080",
-		BidderDeadlineMS:    100,
+		BidderDeadlineMS:    1000, // Allow race-instrumented scheduling; this test verifies re-auction logic.
 		RequestMaxBytes:     16384,
 		BidderMaxInflight:   512,
 		CBMinRequests:       20,
@@ -418,7 +417,7 @@ func TestHandler_ReAuctionOnBudgetExhaustion(t *testing.T) {
 
 	// camp-1 is exhausted, camp-2 succeeds
 	reserver := customMockReserver{
-		fn: func(ctx context.Context, c budget.CampaignBudget, costMicros int64, now time.Time) (budget.Result, error) {
+		fn: func(_ context.Context, c budget.CampaignBudget, _ int64, _ time.Time) (budget.Result, error) {
 			if c.ID == "camp-1" {
 				return budget.Exhausted, nil
 			}
@@ -431,7 +430,7 @@ func TestHandler_ReAuctionOnBudgetExhaustion(t *testing.T) {
 	// Attempt 1: both bid; camp-1 wins 1st price auction with 2.01, but is exhausted.
 	// Re-auction drops camp-1; camp-2 wins 2nd price auction with clearing price 1.01 (floor 1.00 + 0.01).
 	payload := `{"id":"req-1","imp":{"id":"i1","placement_id":"top-banner","w":300,"h":250,"bidfloor":1.00},"device":{"type":"mobile"},"geo":{"country":"IN"}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(payload))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -447,7 +446,7 @@ func TestHandler_ReAuctionOnBudgetExhaustion(t *testing.T) {
 	assert.True(t, h.exhausted.IsExhausted("camp-1", time.Now()))
 
 	// Second request: camp-1 is filtered at targeting, only bidder-2 is called
-	req2 := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(payload))
+	req2 := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(payload))
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	h.ServeHTTP(rec2, req2)
@@ -462,7 +461,7 @@ func TestHandler_BudgetExhaustionAllAttempts(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 2.50}},
@@ -509,7 +508,7 @@ func TestHandler_BudgetExhaustionAllAttempts(t *testing.T) {
 
 	fanout := NewFanout(cfg, m, logger, transport)
 	reserver := customMockReserver{
-		fn: func(ctx context.Context, c budget.CampaignBudget, costMicros int64, now time.Time) (budget.Result, error) {
+		fn: func(_ context.Context, _ budget.CampaignBudget, _ int64, _ time.Time) (budget.Result, error) {
 			return budget.Exhausted, nil
 		},
 	}
@@ -517,7 +516,7 @@ func TestHandler_BudgetExhaustionAllAttempts(t *testing.T) {
 	h := NewHandler(cfg, snapCache, fanout, reserver, NoopEventPublisher{}, m, logger, clk)
 
 	payload := `{"id":"req-1","imp":{"id":"i1","placement_id":"top-banner","w":300,"h":250,"bidfloor":1.00},"device":{"type":"mobile"},"geo":{"country":"IN"}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(payload))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -530,7 +529,7 @@ func TestHandler_FailClosedOnRedisError(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-1", CreativeID: "cr-1", Price: 2.50}},
@@ -577,7 +576,7 @@ func TestHandler_FailClosedOnRedisError(t *testing.T) {
 
 	fanout := NewFanout(cfg, m, logger, transport)
 	reserver := customMockReserver{
-		fn: func(ctx context.Context, c budget.CampaignBudget, costMicros int64, now time.Time) (budget.Result, error) {
+		fn: func(_ context.Context, _ budget.CampaignBudget, _ int64, _ time.Time) (budget.Result, error) {
 			return 0, assert.AnError
 		},
 	}
@@ -585,7 +584,7 @@ func TestHandler_FailClosedOnRedisError(t *testing.T) {
 	h := NewHandler(cfg, snapCache, fanout, reserver, NoopEventPublisher{}, m, logger, clk)
 
 	payload := `{"id":"req-1","imp":{"id":"i1","placement_id":"top-banner","w":300,"h":250,"bidfloor":1.00},"device":{"type":"mobile"},"geo":{"country":"IN"}}`
-	req := httptest.NewRequest("POST", "/v1/bid", strings.NewReader(payload))
+	req := httptest.NewRequestWithContext(context.Background(), "POST", "/v1/bid", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

@@ -51,7 +51,7 @@ func TestFanout_BiddersMixAndDeadline(t *testing.T) {
 	}
 
 	// 1. Fast bidder: returns 200 immediately
-	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/fast"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{{CampaignID: "camp-fast", CreativeID: "cr1", Price: 2.50}},
@@ -59,17 +59,17 @@ func TestFanout_BiddersMixAndDeadline(t *testing.T) {
 	}
 
 	// 2. Error bidder: returns 500
-	transport.handlers["/bid/error"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/error"] = func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 
 	// 3. No-bid bidder: returns 204
-	transport.handlers["/bid/nobid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/nobid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}
 
 	// 4. Hanging bidder: waits for context cancellation
-	transport.handlers["/bid/hang"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/hang"] = func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	}
 
@@ -146,7 +146,7 @@ func TestFanout_BulkheadRejection(t *testing.T) {
 		handlers: make(map[string]http.HandlerFunc),
 	}
 	gate := make(chan struct{})
-	transport.handlers["/bid/slow"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid/slow"] = func(w http.ResponseWriter, _ *http.Request) {
 		<-gate
 		w.WriteHeader(http.StatusNoContent)
 	}
@@ -191,15 +191,15 @@ func TestFanout_DropInvalidBids(t *testing.T) {
 	transport := &fakeBidderTransport{
 		handlers: make(map[string]http.HandlerFunc),
 	}
-	transport.handlers["/bid"] = func(w http.ResponseWriter, r *http.Request) {
+	transport.handlers["/bid"] = func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(outboundBidResponse{
 			Bids: []RawBid{
-				{CampaignID: "unknown-c", CreativeID: "cr1", Price: 1.00},     // Unknown campaign
-				{CampaignID: "c1", CreativeID: "cr1", Price: -0.50},           // Negative price
-				{CampaignID: "c1", CreativeID: "cr1", Price: 5.00},            // Exceeds max bid 2.00
-				{CampaignID: "c1", CreativeID: "cr1", Price: 1.1234567},       // > 6 decimals
-				{CampaignID: "c1", CreativeID: "cr1", Price: 1.50},            // Valid
+				{CampaignID: "unknown-c", CreativeID: "cr1", Price: 1.00}, // Unknown campaign
+				{CampaignID: "c1", CreativeID: "cr1", Price: -0.50},       // Negative price
+				{CampaignID: "c1", CreativeID: "cr1", Price: 5.00},        // Exceeds max bid 2.00
+				{CampaignID: "c1", CreativeID: "cr1", Price: 1.1234567},   // > 6 decimals
+				{CampaignID: "c1", CreativeID: "cr1", Price: 1.50},        // Valid
 			},
 		})
 	}

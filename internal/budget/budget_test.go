@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"os"
+	"pulsebid/internal/platform/testutil"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func getTestRedis(t *testing.T) redis.UniversalClient {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		t.Skipf("skipping Redis test: Redis not reachable at %s: %v", addr, err)
+		testutil.Unavailable(t, "skipping Redis test: Redis not reachable at %s: %v", addr, err)
 	}
 
 	t.Cleanup(func() {
@@ -133,7 +134,7 @@ func TestRedisReserver_ExactCapAndRelease(t *testing.T) {
 	assert.Equal(t, int64(0), spent)
 
 	// 8. Key TTL verification
-	key := BudgetKey(campID, now)
+	key := Key(campID, now)
 	ttl, err := client.TTL(ctx, key).Result()
 	require.NoError(t, err)
 	assert.True(t, ttl > 0 && ttl <= 48*time.Hour)

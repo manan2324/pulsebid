@@ -4,16 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"pulsebid/internal/platform/testutil"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func isKafkaAvailable(addr string) bool {
-	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	conn, err := (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext(context.Background(), "tcp", addr)
 	if err != nil {
 		return false
 	}
@@ -32,7 +35,7 @@ func TestPublisher_DefaultConfig(t *testing.T) {
 func TestPublisher_NoopPublisher(t *testing.T) {
 	noop := NoopPublisher{}
 	require.NoError(t, noop.Publish(context.Background(), &Event{}))
-	require.True(t, noop.TryPublishAsync(&Event{}))
+	require.True(t, noop.TryPublishAsync(context.Background(), &Event{}))
 	require.NoError(t, noop.Flush(context.Background()))
 	require.NoError(t, noop.Close())
 }
@@ -81,13 +84,36 @@ func TestPublisher_BuildRecord_KeyFallbacks(t *testing.T) {
 	require.Equal(t, "b-1", string(rec3.Key))
 }
 
+func TestPublisher_AsyncCapturesTraceAndOwnsPayload(t *testing.T) {
+	p := &KafkaPublisher{
+		topic: "test-topic", auctionChan: make(chan auctionItem, 1),
+		metrics: NewPublisherMetrics(nil), closed: make(chan struct{}),
+	}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1}, SpanID: trace.SpanID{2}, TraceFlags: trace.FlagsSampled,
+	})
+	ctx, cancel := context.WithCancel(trace.ContextWithSpanContext(context.Background(), sc))
+	ev := &Event{Type: TypeAuction, BidID: "original", Participants: []string{"campaign"}}
+	require.True(t, p.TryPublishAsync(ctx, ev))
+	cancel()
+	ev.BidID = "mutated"
+	ev.Participants[0] = "mutated"
+	item := <-p.auctionChan
+	carrier := &kafkaHeaderCarrier{headers: &item.record.Headers}
+	require.Contains(t, carrier.Get("traceparent"), sc.TraceID().String())
+	var captured Event
+	require.NoError(t, json.Unmarshal(item.record.Value, &captured))
+	require.Equal(t, "original", captured.BidID)
+	require.Equal(t, []string{"campaign"}, captured.Participants)
+}
+
 func TestPublisher_AuctionDropOnFull(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	metrics := NewPublisherMetrics(reg)
 
 	p := &KafkaPublisher{
 		topic:       "test-topic",
-		auctionChan: make(chan *Event, 2),
+		auctionChan: make(chan auctionItem, 2),
 		metrics:     metrics,
 		closed:      make(chan struct{}),
 	}
@@ -96,11 +122,11 @@ func TestPublisher_AuctionDropOnFull(t *testing.T) {
 	ev2 := &Event{Type: TypeAuction, BidID: "bid-2"}
 	ev3 := &Event{Type: TypeAuction, BidID: "bid-3"}
 
-	require.True(t, p.TryPublishAsync(ev1))
-	require.True(t, p.TryPublishAsync(ev2))
+	require.True(t, p.TryPublishAsync(context.Background(), ev1))
+	require.True(t, p.TryPublishAsync(context.Background(), ev2))
 
 	// Third event should drop because buffer is full (capacity 2)
-	require.False(t, p.TryPublishAsync(ev3))
+	require.False(t, p.TryPublishAsync(context.Background(), ev3))
 
 	metricFamilies, err := reg.Gather()
 	require.NoError(t, err)
@@ -129,7 +155,7 @@ func TestPublisher_AuctionDropOnFull(t *testing.T) {
 
 	// When closed, TryPublishAsync should also return false
 	close(p.closed)
-	require.False(t, p.TryPublishAsync(ev1))
+	require.False(t, p.TryPublishAsync(context.Background(), ev1))
 }
 
 func TestPublisher_BufferLimitCheck(t *testing.T) {
@@ -144,7 +170,7 @@ func TestPublisher_BufferLimitCheck(t *testing.T) {
 
 	reg := prometheus.NewRegistry()
 	p := NewKafkaPublisherWithClient(cl, "test-topic", 1, 10, reg, nil)
-	defer p.Close()
+	defer func() { _ = p.Close() }()
 
 	// Fill the franz-go buffer with 1 record so BufferedProduceRecords() >= 1
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -162,10 +188,10 @@ func TestPublisher_BufferLimitCheck(t *testing.T) {
 func TestPublisher_IntegrationWithRedpanda(t *testing.T) {
 	broker := "localhost:9092"
 	if !isKafkaAvailable(broker) {
-		t.Skip("Kafka / Redpanda is not reachable at " + broker)
+		testutil.Unavailable(t, "%s", "Kafka / Redpanda is not reachable at "+broker)
 	}
 
-	topic := "pulsebid.events.v1"
+	topic := testutil.KafkaTopic(t, "localhost:9092")
 	reg := prometheus.NewRegistry()
 	cfg := PublisherConfig{
 		Brokers:          []string{broker},
@@ -179,9 +205,9 @@ func TestPublisher_IntegrationWithRedpanda(t *testing.T) {
 
 	pub, err := NewKafkaPublisher(cfg, reg, nil)
 	require.NoError(t, err)
-	defer pub.Close()
+	defer func() { _ = pub.Close() }()
 
-	bidID := "0193f0a2-9999-7000-8000-000000000001"
+	bidID := uuid.NewString()
 	campID := "0193f0a2-ca00-7000-8000-000000000001"
 	reqID := "req-redpanda-test-1"
 
@@ -229,7 +255,7 @@ func TestPublisher_IntegrationWithRedpanda(t *testing.T) {
 		Participants:     []string{campID},
 		WinnerCampaignID: campID,
 	}
-	require.True(t, pub.TryPublishAsync(auctionEv))
+	require.True(t, pub.TryPublishAsync(ctx, auctionEv))
 
 	// Flush to ensure delivery
 	err = pub.Flush(ctx)

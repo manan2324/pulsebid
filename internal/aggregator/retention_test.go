@@ -15,17 +15,17 @@ type mockStoreForRetention struct {
 	called       bool
 }
 
-func (m *mockStoreForRetention) ProcessBatch(ctx context.Context, evs []*events.Event) (newCount, dupCount int, err error) {
+func (m *mockStoreForRetention) ProcessBatch(_ context.Context, _ []*events.Event) (newCount, dupCount int, err error) {
 	return 0, 0, nil
 }
 
-func (m *mockStoreForRetention) DeleteOldProcessedEvents(ctx context.Context, cutoff time.Time, batchLimit int) (int64, error) {
+func (m *mockStoreForRetention) DeleteOldProcessedEvents(_ context.Context, _ time.Time, _ int) (int64, error) {
 	m.called = true
 	m.deletedCount += 5
 	return 5, nil
 }
 
-func (m *mockStoreForRetention) Ping(ctx context.Context) error {
+func (m *mockStoreForRetention) Ping(_ context.Context) error {
 	return nil
 }
 

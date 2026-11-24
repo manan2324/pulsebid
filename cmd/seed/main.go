@@ -73,6 +73,7 @@ func (c *client) do(ctx context.Context, method, path string, in any, out any) (
 		body = bytes.NewReader(raw)
 	}
 
+	// #nosec G704 -- This local CLI deliberately connects to the operator-configured campaign service.
 	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, body)
 	if err != nil {
 		return 0, err
@@ -82,11 +83,12 @@ func (c *client) do(ctx context.Context, method, path string, in any, out any) (
 		req.Header.Set("Content-Type", "application/json")
 	}
 
+	// #nosec G704 -- baseURL is trusted CLI configuration, not a remote request parameter.
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if out != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 && resp.StatusCode != http.StatusNoContent {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
@@ -188,16 +190,17 @@ func runSeed() error {
 	if err != nil {
 		return fmt.Errorf("create advertiser: %w", err)
 	}
-	if status == http.StatusCreated {
+	switch status {
+	case http.StatusCreated:
 		advertiserID = advResp.ID
-	} else if status == http.StatusConflict {
+	case http.StatusConflict:
 		// Fetch existing advertiser
 		var page struct {
 			Items []struct {
 				ID     string `json:"id"`
 				Name   string `json:"name"`
 				Status string `json:"status"`
-			} `json:"items"`
+			} `json:"data"`
 		}
 		_, err := cli.do(ctx, http.MethodGet, "/v1/advertisers?limit=200", nil, &page)
 		if err != nil {
@@ -209,7 +212,7 @@ func runSeed() error {
 				break
 			}
 		}
-	} else {
+	default:
 		return fmt.Errorf("create advertiser returned HTTP %d", status)
 	}
 
@@ -224,7 +227,7 @@ func runSeed() error {
 			ID     string `json:"id"`
 			Name   string `json:"name"`
 			Status string `json:"status"`
-		} `json:"items"`
+		} `json:"data"`
 	}
 	_, err = cli.do(ctx, http.MethodGet, "/v1/campaigns?advertiser_id="+advertiserID+"&limit=200", nil, &campPage)
 	if err != nil {

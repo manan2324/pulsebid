@@ -3,6 +3,7 @@ package aggregator
 import (
 	"context"
 	"net"
+	"pulsebid/internal/platform/testutil"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func isKafkaAvailable(addr string) bool {
-	conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+	conn, err := (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext(context.Background(), "tcp", addr)
 	if err != nil {
 		return false
 	}
@@ -23,7 +24,7 @@ func isKafkaAvailable(addr string) bool {
 func TestDLQ_Publish(t *testing.T) {
 	broker := "localhost:9092"
 	if !isKafkaAvailable(broker) {
-		t.Skip("Kafka / Redpanda is not reachable at " + broker)
+		testutil.Unavailable(t, "%s", "Kafka / Redpanda is not reachable at "+broker)
 	}
 
 	cl, err := kgo.NewClient(

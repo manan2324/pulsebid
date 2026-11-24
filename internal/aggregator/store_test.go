@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"pulsebid/internal/platform/testutil"
 	"testing"
 	"time"
 
@@ -21,13 +22,13 @@ func getTestDatabaseURL() string {
 		return envURL
 	}
 	// Try port 15432 (local Windows override in .env)
-	conn, err := net.DialTimeout("tcp", "localhost:15432", 300*time.Millisecond)
+	conn, err := (&net.Dialer{Timeout: 300 * time.Millisecond}).DialContext(context.Background(), "tcp", "localhost:15432")
 	if err == nil {
 		_ = conn.Close()
 		return "postgres://pulsebid:pulsebid@localhost:15432/pulsebid?sslmode=disable"
 	}
 	// Try standard 5432
-	conn, err = net.DialTimeout("tcp", "localhost:5432", 300*time.Millisecond)
+	conn, err = (&net.Dialer{Timeout: 300 * time.Millisecond}).DialContext(context.Background(), "tcp", "localhost:5432")
 	if err == nil {
 		_ = conn.Close()
 		return "postgres://pulsebid:pulsebid@localhost:5432/pulsebid?sslmode=disable"
@@ -39,8 +40,9 @@ func setupTestStore(t *testing.T) (*PGStore, *pgxpool.Pool) {
 	t.Helper()
 	dbURL := getTestDatabaseURL()
 	if dbURL == "" {
-		t.Skip("PostgreSQL not reachable for store integration test")
+		testutil.Unavailable(t, "%s", "PostgreSQL not reachable for store integration test")
 	}
+	dbURL = testutil.DatabaseURL(t, dbURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -50,7 +52,7 @@ func setupTestStore(t *testing.T) (*PGStore, *pgxpool.Pool) {
 
 	store, err := NewPGStoreFromURL(ctx, dbURL, m, nil)
 	if err != nil {
-		t.Skip("failed to connect to postgres: " + err.Error())
+		testutil.Unavailable(t, "%s", "failed to connect to postgres: "+err.Error())
 	}
 
 	return store, store.pool

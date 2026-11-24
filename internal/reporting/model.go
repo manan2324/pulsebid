@@ -9,6 +9,7 @@ import (
 // Granularity defines the temporal grouping for reporting metrics (Section 11.3).
 type Granularity string
 
+// Supported report aggregation granularities.
 const (
 	GranularityHour  Granularity = "hour"
 	GranularityDay   Granularity = "day"
