@@ -5,17 +5,38 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source scripts/database-env.sh
 work=$(mktemp -d)
 pid=''
+catalog_pid=''
 cleanup() {
-  if [[ -n $pid ]]; then kill -TERM "$pid" 2>/dev/null || true; wait "$pid" || true; fi
+  status=$?
+  if (( status != 0 )); then
+    for log in "$work"/*.log; do
+      [[ -f $log ]] || continue
+      echo "--- $log ---" >&2
+      tail -n 60 "$log" >&2
+    done
+  fi
+  for child in "$pid" "$catalog_pid"; do
+    if [[ -n $child ]]; then kill -TERM "$child" 2>/dev/null || true; wait "$child" || true; fi
+  done
   rm -rf -- "$work"
+  return "$status"
 }
 trap cleanup EXIT
 go build -o "$work/" ./cmd/...
+# Gateway readiness requires a real catalog snapshot. Keep a dedicated catalog
+# alive while testing each process, including the campaign-service under test.
+# Separate ports avoid depending on an application already running on :8082.
+SERVICE_NAME=campaign-service ADMIN_ADDR=127.0.0.1:18089 HTTP_ADDR=127.0.0.1:18189 GRPC_ADDR=127.0.0.1:18289 \
+  SHUTDOWN_DELAY=1s SHUTDOWN_TIMEOUT=5s OTEL_TRACES_SAMPLER_ARG=0 \
+  "$work/campaign-service" >"$work/catalog.log" 2>&1 &
+catalog_pid=$!
+bash scripts/wait-for.sh http://127.0.0.1:18089/readyz 15
 port=18090
 for service in bid-gateway campaign-service event-aggregator mock-bidder seed; do
   args=()
   if [[ $service == mock-bidder ]]; then args=(--count 1 --base-port "$((port+300))"); fi
   SERVICE_NAME="$service" ADMIN_ADDR="127.0.0.1:$port" HTTP_ADDR="127.0.0.1:$((port+100))" GRPC_ADDR="127.0.0.1:$((port+200))" \
+    CAMPAIGN_GRPC_ADDR=127.0.0.1:18289 \
     CONSUMER_GROUP="pulsebid-platform-smoke-$port-$$" \
     SHUTDOWN_DELAY=1s SHUTDOWN_TIMEOUT=5s OTEL_TRACES_SAMPLER_ARG=0 \
     "$work/$service" "${args[@]}" >"$work/$service.log" 2>&1 &
