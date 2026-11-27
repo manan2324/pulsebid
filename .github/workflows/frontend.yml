@@ -1,0 +1,97 @@
+name: Frontend acceptance
+on:
+  push:
+    paths:
+      [
+        "frontend/**",
+        "Backend/**",
+        "docker-compose.yml",
+        ".github/workflows/frontend.yml",
+      ]
+  pull_request:
+    paths:
+      [
+        "frontend/**",
+        "Backend/**",
+        "docker-compose.yml",
+        ".github/workflows/frontend.yml",
+      ]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ADMIN_PASSWORD: e2e-password
+      SESSION_SECRET: e2e-secret-with-at-least-32-characters
+      PULSEBID_API_KEY: dev-key
+      API_KEYS: dev-key
+      APP_ORIGIN: http://localhost:3001
+      E2E_PRODUCTION: "true"
+      E2E_REAL_BACKEND: "true"
+      E2E_EXTERNAL_SERVER: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install and check source
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run check:lock
+          npm run check:api
+          npm run lint
+          npm run typecheck
+          npm run test:coverage
+          npm run analyze
+          npm audit --omit=dev
+          npm run check:secrets
+          npm run check:bundles
+          npx playwright install --with-deps chromium
+      - name: Start infrastructure and migrate
+        run: |
+          docker compose up -d --wait postgres redis redpanda prometheus grafana jaeger
+          docker compose --profile tools run --build --rm migrate up
+          docker compose exec -T redpanda rpk topic create pulsebid.events.v1 pulsebid.events.dlq.v1 --partitions 3 --replicas 1
+      - name: Start applications and register mock bidders
+        run: |
+          docker compose --profile apps up -d --build --wait
+          docker compose --profile tools run --build --rm seed
+      - name: Browser acceptance against the container console
+        working-directory: frontend
+        run: npm run e2e
+      - name: Measure local production performance
+        run: |
+          docker compose stop web
+          npm --prefix frontend run lighthouse
+      - name: Package reports
+        working-directory: frontend
+        run: npm run report:archive
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-acceptance-${{ github.run_number }}
+          path: |
+            docs/test-reports/
+            frontend/playwright-report/
+            frontend/test-results/
+            frontend/docs/performance/
+            frontend/.next/analyze/
+            frontend/coverage/
+          retention-days: 14
+      - name: Service diagnostics
+        if: failure()
+        run: docker compose --profile apps logs --tail 100
+      - name: Stop services
+        if: always()
+        run: docker compose --profile apps down

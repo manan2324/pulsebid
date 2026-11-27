@@ -1,0 +1,40 @@
+name: pulsebid
+include:
+  - path: ./Backend/deploy/docker-compose.yml
+services:
+  prometheus:
+    volumes:
+      - ./frontend/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  web:
+    profiles: [apps]
+    build:
+      context: ./frontend
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3001}
+      CAMPAIGN_API_URL: http://campaign-service:8081
+      REPORTING_API_URL: http://event-aggregator:8083
+      GATEWAY_URL: http://bid-gateway:8080
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      GATEWAY_ADMIN_URL: http://bid-gateway:8090
+      CAMPAIGN_ADMIN_URL: http://campaign-service:8091
+      AGGREGATOR_ADMIN_URL: http://event-aggregator:8093
+      PROMETHEUS_URL: http://prometheus:9090
+      BIDDER_HOST: mock-bidders
+      BIDDER_BASE_PORT: "9101"
+      BIDDER_COUNT: "8"
+      PULSEBID_API_KEY: ${PULSEBID_API_KEY:-dev-key}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET to 32+ characters}
+      AUTH_DISABLED: "false"
+      TEST_MODE_UI: "false"
+    depends_on:
+      campaign-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 5

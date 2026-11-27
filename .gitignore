@@ -1,33 +1,46 @@
-# Secrets
+# Local credentials (publish templates only)
 .env
 .env.*
 !.env.example
-
-# Build outputs
-/bin/
-/scratch/
+*.pem
+*.key
+*.p12
+*.pfx
+# Dependencies, caches and build products
+node_modules/
+.next/
+.next-dev/
+out/
+build/
+bin/
+.tools/
+.cache/
+scratch/
 *.exe
 *.test
-*.out
-
-# Coverage
+*.tsbuildinfo
+next-env.d.ts
+# Generated verification output
+coverage/
 coverage
 coverage_budget
 coverage.*
-
-# Vendor / downloaded tools
-/loadtest/k6/k6
-
-# Test reports (runtime artifacts; only keep the placeholder)
-/docs/test-reports/*
-!/docs/test-reports/.gitkeep
-
-# Tooling caches
-/.tools/
-/.cache/
-
-# OS / IDE
+*.out
+*.prof
+*.pprof
+*.log
+playwright-report/
+test-results/
+test-results-*/
+load-results/
+docs/test-reports/
+frontend/docs/screenshots/
+frontend/docs/performance/
+# Local editor and operating-system files
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-.idea/
-.vscode/
+Desktop.ini
+*.swp
+*.swo

@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+.tools
+.cache
+bin
+docs/test-reports
+*.exe
+*.out
+scratch
+loadtest/k6/k6
+load-results
+coverage
+coverage_budget
+coverage.*
+*.pprof
+*.prof

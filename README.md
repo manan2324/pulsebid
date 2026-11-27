@@ -1,161 +1,105 @@
 # PulseBid
 
-A real-time bidding exchange in Go: campaign administration, cached gRPC
-catalogs, concurrent DSP fan-out, second-price auctions, atomic Redis budgets,
-signed impression/click tracking, Kafka ingestion, deduplicated PostgreSQL
-rollups, and reporting. Prometheus, Grafana, and Jaeger provide observability.
+PulseBid is a real-time bidding exchange with a web console for managing advertisers, campaigns, creatives, and bidders. It includes an auction simulator, budget pacing, event tracking, reporting, and operational dashboards.
 
-The [build plan](./PulseBid%20Build%20Plan.md) defines the contracts.
-See [current verification](./docs/VERIFICATION.md) for actual results and evidence;
-historical completion claims are superseded by that report.
+The backend uses Go, PostgreSQL, Redis, and Redpanda. The console uses Next.js, React, and TypeScript. Prometheus, Grafana, and Jaeger provide metrics and distributed tracing.
 
-## Quickstart
+## Repository
 
-Requirements: Docker Engine/Desktop with Linux containers and Compose **2.24.4+**,
-Bash, curl, and Python 3 for the system proof scripts. Windows users can run the
-commands in an Ubuntu WSL terminal. Go **1.27.3** is needed for native development;
-the container quickstart does not need a host Go or Node installation.
-
-From the repository root:
-
-```bash
-test -f .env || cp .env.example .env
-docker compose --env-file .env -f deploy/docker-compose.yml up -d --wait
-bash scripts/create-topics.sh
-docker compose --env-file .env -f deploy/docker-compose.yml --profile tools run --build --rm migrate up
-docker compose --env-file .env -f deploy/docker-compose.yml --profile apps up --build -d --wait
-docker compose --env-file .env -f deploy/docker-compose.yml --profile tools run --build --rm seed
-```
-
-If another PostgreSQL server uses 5432, set `POSTGRES_PORT=15432` in `.env`.
-For native database clients, update `DATABASE_URL` to the same port. Preserve an
-existing `.env`; native commands do not automatically load all of its variables.
-
-The seed command can be repeated: it registers eight bidders and maintains
-40 active campaigns targeting `slot-0` through `slot-9`.
-
-```bash
-curl -i http://localhost:8090/readyz
-curl -H 'X-API-Key: dev-key' http://localhost:8081/v1/campaigns
-curl -H 'Content-Type: application/json' -d '{"id":"example","imp":{"id":"1","placement_id":"slot-0","w":300,"h":250,"bidfloor":0.5},"device":{"type":"mobile"},"geo":{"country":"IN"},"tmax":100}' http://localhost:8080/v1/bid
-```
-
-| Service | Address |
+| Path | Contents |
 | --- | --- |
-| Gateway / admin | `localhost:8080` / `localhost:8090` |
-| Campaign REST / gRPC / admin | `localhost:8081` / `localhost:8082` / `localhost:8091` |
-| Reporting / aggregator admin | `localhost:8083` / `localhost:8093` |
-| Mock bidders / admin | `localhost:9101`â€“`9108` / `localhost:8094` |
-| PostgreSQL / Redis / Kafka | `localhost:5432` / `localhost:6379` / `localhost:9092` |
-| Grafana / Prometheus / Jaeger | `localhost:3000` / `localhost:9090` / `localhost:16686` |
+| [frontend](./frontend/) | Web console, API proxy, authentication, and browser tests |
+| [Backend](./Backend/) | Services, migrations, API contracts, and backend tests |
+| [Backend/deploy](./Backend/deploy/) | Container builds and observability configuration |
+| [.github/workflows](./.github/workflows/) | Backend verification and frontend acceptance workflows |
 
-Grafana uses local development credentials `admin` / `admin`. Campaign and
-reporting APIs use `X-API-Key: dev-key`. Configuration defaults are in
-[.env.example](./.env.example). Admin listeners expose health, readiness, metrics,
-and pprof. Test endpoints are enabled in the local Compose apps profile.
+## Requirements
 
-## Run the checks
+- Docker Engine or Docker Desktop with Linux containers and Docker Compose v2.24.4 or newer.
+- Node.js 22.19 or newer within the Node.js 22 release line and npm for frontend development.
+- Go matching [go.mod](./Backend/go.mod), plus Bash, GNU Make, and Python 3 for native backend development and verification. Windows users can use WSL or Git Bash for Bash-based commands.
 
-```bash
-# Linux/macOS with Go, Make, a 64-bit C compiler, and running backing services:
-make lint build
-DATABASE_URL='postgres://pulsebid:pulsebid@localhost:5432/pulsebid?sslmode=disable' make test-int
-REQUIRE_INTEGRATION=1 go test -race -count=5 ./internal/budget ./internal/gateway ./internal/aggregator
-make fuzz FUZZTIME=10s
-make bench
+## Run the complete application
 
-# Windows/WSL alternative: container supplies Go, Make, and a 64-bit compiler.
-# Set DATABASE_URL to the host-published PostgreSQL port (15432 on this machine).
-DATABASE_URL='postgres://pulsebid:pulsebid@localhost:15432/pulsebid?sslmode=disable' bash scripts/verify-linux.sh
+Run these commands from the repository root. Copy the environment template first (PowerShell: `Copy-Item .env.example .env`; Bash: `cp .env.example .env`).
 
-# Full API regression; builds apps, migrates, seeds, and runs all Postman folders:
-bash scripts/test-api.sh
+Edit your local environment file and set `ADMIN_PASSWORD` and a random `SESSION_SECRET` of at least 32 characters. Keep `PULSEBID_API_KEY` and `API_KEYS` consistent. Never commit real credentials.
+
+```sh
+docker compose up -d --wait postgres redis redpanda prometheus grafana jaeger
+docker compose --profile tools run --build --rm migrate up
+docker compose exec -T redpanda rpk topic create pulsebid.events.v1 pulsebid.events.dlq.v1 --partitions 3 --replicas 1
+docker compose --profile apps up -d --build --wait
+docker compose --profile tools run --build --rm seed
 ```
 
-`make test-int` runs **all** packages, enables campaign testcontainers, and sets
-`REQUIRE_INTEGRATION=1`: an unavailable PostgreSQL, Redis, or Kafka service is a
-failure, not a skipped safety test. Kafka tests create private topics and remove
-them afterward. CI starts and migrates infrastructure before running this suite.
-Without that flag, ordinary `go test ./...` may skip unavailable external services.
-Repository and retention tests create migrated private databases on the configured
-test server and drop them afterward; that test account needs `CREATE DATABASE`.
-Application tables are not used for those tests.
+Topic creation is needed on a fresh installation; already-existing topics do not need recreation. Seeding registers the mock bidders and sample campaigns. It is intended for development and demonstrations.
 
-The API runner also creates a private migrated database. Its exit cleanup restores
-the normal application configuration and drops only that test database. Run API
-and load checks separately from integration tests to avoid competing workloads.
+Open [the console](http://localhost:3001) and sign in using the password you configured. The frontend does not have a fixed built-in administrator password.
 
-The native Windows GCC installed on this machine is 32-bit and cannot build
-Go's race detector; use the Linux verification script. Docker host networking
-must be enabled for that script on Docker Desktop. Newman runs in a Node
-container, so no host Newman installation is needed. Reports are under
-`docs/test-reports/<date>/phase-12/` and `docs/test-reports/<date>/verification/`.
+| Service | Local address |
+| --- | --- |
+| Console | http://localhost:3001 |
+| Bid gateway | http://localhost:8080 |
+| Campaign API | http://localhost:8081 |
+| Reporting API | http://localhost:8083 |
+| Grafana | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
+| Jaeger | http://localhost:16686 |
 
-## System and performance proofs
+The standalone frontend development configuration is separate from the root Compose configuration. See the [frontend guide](./frontend/README.md).
 
-```bash
-# Starts three gateways behind Traefik and checks an isolated $0.05 budget.
-bash scripts/test-multi-replica-overspend.sh
-# Public gateway URLs now use localhost:8088; each admin port is assigned dynamically.
-bash scripts/test-duplicate-replay.sh
-bash scripts/verify-no-overspend.sh
+## Use the console
+
+1. Review the dashboard and service status.
+2. Create or inspect an advertiser, then configure its campaigns, creatives, targeting, budget, and bidder.
+3. Activate a campaign with an active creative and a reachable bidder.
+4. Open the simulator, send a request matching the campaign targeting, and inspect the auction result. A fill requires an eligible campaign, a valid bid above the floor, and available budget.
+5. Fire the returned tracking links to generate impression/click events, then inspect reporting. Auction-only traffic does not imply recorded impressions or clicks.
+6. Use the system page to inspect service health and open Grafana or Jaeger.
+
+## Development and verification
+
+```sh
+cd frontend
+npm ci
+npm run dev
 ```
 
-The budget proof requires 2,000 completed k6 requests, positive fills capped at
-49 at a clearing CPM of 1.01, spend of exactly 49,490 micros, and positive request
-counts on all three replicas. It reports error/no-bid responses and unconfirmed
-reservations separately: a Redis response timeout can leave a charged reservation
-under the documented fail-closed/no-refund behavior. It fails if no money was
-spent or any cap is exceeded. Replay uses a fresh campaign,
-fires each impression/click three times, restarts ingestion with queued records,
-and checks exactly one of each plus the exact spend. Go integration tests inject
-crashes before DB commit and after DB commit/before offset commit.
+Run source checks from the frontend directory:
 
-To return to a single gateway on 8080 after scale tests:
-
-```bash
-docker compose --env-file .env -f deploy/docker-compose.yml --profile apps up -d --wait --scale bid-gateway=1 bid-gateway
+```sh
+npm run check:lock
+npm run check:api
+npm run lint
+npm run typecheck
+npm test
 ```
 
-For headline performance, run the gateway and mock bidders natively on Linux
-or WSL, with the backing services running. Seed bidder endpoints for the gateway's
-network namespace (`BIDDER_HOST=http://127.0.0.1 make seed` for native bidders).
-Install k6 and Vegeta, or set `K6_BIN` and `VEGETA_BIN` to their executable paths.
-Enable test mode on the gateway to collect block/mutex profiles.
+Use `npm run build` followed by `npm start` to test the production frontend build. Browser acceptance, coverage, and performance commands are documented in the [frontend guide](./frontend/README.md).
 
-```bash
-make load RATE=1000 DURATION=30s
-make load RATE=3000 DURATION=30s
-make load RATE=5000 DURATION=2m
-bash scripts/run-phase12-load-and-profile.sh
+From the backend directory, use `make lint build`, `make test`, and `make test-int` as appropriate. Integration, API, and load tests require infrastructure and may create test data; use a dedicated test environment. See [backend development](./Backend/README.md) and [load testing](./Backend/loadtest/README.md).
+
+CI recreates verification reports as downloadable artifacts. Reports, screenshots, profiling captures, caches, installed dependencies, and build output are excluded from Git. Test source, fixtures, lockfiles, and generated API bindings are retained so checks remain reproducible.
+
+## Deployment
+
+Container builds and production frontend output are provided, but the bundled Compose stack is a local reference environment. It uses demo infrastructure credentials, mock bidders, and enabled backend test endpoints. Do not expose it publicly unchanged.
+
+For a deployment, configure TLS and public origins, replace API/database/event-token secrets and Grafana credentials, disable test endpoints and API mocking, and restrict database, broker, admin, metrics, and tracing access. Configure durable storage, backups, resource limits, and readiness monitoring for your environment. The console uses a single shared administrator password and process-local login throttling; multi-user access and distributed throttling require additional authentication infrastructure.
+
+Run functional and load verification on the intended deployment hardware before setting capacity targets. This repository does not establish a passing sustained 5,000 requests/second capacity guarantee.
+
+See the [architecture](./Backend/docs/ARCHITECTURE.md), [operations runbook](./Backend/docs/RUNBOOK.md), and environment templates: [root](./.env.example), [backend](./Backend/.env.example), [frontend](./frontend/.env.example).
+
+## Stop services
+
+```sh
+docker compose --profile apps --profile tools --profile scale down
 ```
 
-The full driver checks 1k/3k/5k rps, collects five pprof profiles during the
-two-minute 5k run, runs slow-bidder isolation, and cross-checks with Vegeta.
-Threshold failures propagate as command failures. k6 requires p99 below 120ms,
-failure rate below 1%, zero dropped iterations, and actual fills. Do not equate
-passing Postman assertions with proof of concurrent throughput.
+Named volumes are preserved. Adding `--volumes` deletes stored application and observability data.
 
-## Native development and operations
+## License
 
-```bash
-make run-campaign             # reads DATABASE_URL from the selected env file
-make bidders N=8
-make run-gateway
-make run-aggregator
-make seed                    # requires the campaign service to be running
-make proto sqlc              # regenerate protobuf and query code
-make down                    # stop the stack, preserve data
-make reset CONFIRM=1          # explicitly delete local infrastructure volumes
-```
-
-SIGTERM/SIGINT first marks services unready, waits the drain delay, stops
-listeners, flushes owned work, and closes resources. Kafka outages leave bidding
-available while critical impression/click publishing returns 503. Redis outages
-fail closed. Gateway catalogs remain available during campaign-service outages
-once an initial snapshot has loaded.
-
-See [architecture](./docs/ARCHITECTURE.md), [decisions](./docs/DECISIONS.md),
-[runbook](./docs/RUNBOOK.md), [load-test details](./loadtest/README.md),
-[OpenAPI contracts](./api/openapi), and the
-[Postman collection](./postman/PulseBid.postman_collection.json).
+[MIT](./LICENSE).
